@@ -1,0 +1,42 @@
+{
+    "scenes": [],
+    "images": {},
+    "screens": {
+        "main": {
+            "scenes": [],
+            "every": 60,
+            "dim": 15,
+            "blur": 0
+        },
+        "study": {
+            "enabled": true,
+            "same_as_main": true,
+            "scenes": [],
+            "every": 60,
+            "dim": 45,
+            "blur": 0
+        },
+        "done": {
+            "enabled": false,
+            "scenes": [],
+            "every": 60,
+            "dim": 15,
+            "blur": 0
+        }
+    },
+    "day": {
+        "source": "manual",
+        "sunrise": "06:30",
+        "sunset": "19:30",
+        "latitude": null,
+        "longitude": null,
+        "place": ""
+    },
+    "transition_seconds": 2.0,
+    "light": {
+        "tint": false,
+        "tint_strength": 70,
+        "bloom": 50
+    },
+    "config_version": 2
+}

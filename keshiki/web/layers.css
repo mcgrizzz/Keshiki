@@ -1,0 +1,29 @@
+/* Keshiki's background stage. In Anki's main window every webview gets one,
+   sized to the whole window and shifted by the webview's own offset, so the
+   toolbar, main area and bottom bar each show their slice of one image. */
+.keshiki-stage {
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none;
+  background: var(--canvas, #2c2c2c);
+  transition: opacity var(--kk-fade, 0ms) ease-in-out;
+}
+.keshiki-stage.keshiki-fixed { position: fixed; z-index: -2147483647; }
+.keshiki-stack { position: absolute; inset: 0; transition: filter var(--kk-fade, 0ms) ease-in-out; }
+.keshiki-layer { position: absolute; inset: 0; isolation: isolate; transition: opacity var(--kk-fade, 0ms) ease-in-out; }
+.keshiki-layer > div {
+  position: absolute; inset: 0;
+  background-size: cover; background-repeat: no-repeat; background-position: var(--kx, 50%) var(--ky, 50%);
+}
+.keshiki-lights, .keshiki-bloom { transition: opacity var(--kk-fade, 0ms) ease-in-out; }
+.keshiki-bloom { mix-blend-mode: screen; }
+/* Dims toward the theme's own background, so text keeps its contrast in light and dark mode. */
+.keshiki-dim {
+  position: absolute; inset: 0; background: var(--canvas, #2c2c2c);
+  transition: opacity var(--kk-fade, 0ms) ease-in-out;
+}
+
+/* While a background shows, pages let it through: Anki's canvas, card
+   template backgrounds and the copy Anki puts on the reviewer's toolbar. */
+html.keshiki-on, html.keshiki-on body { background: transparent !important; }
+/* The 1px lines Anki draws between the bars and the main area. */
+html.keshiki-on .header { border-bottom-color: transparent !important; }
+html.keshiki-on #outer { border-top-color: transparent !important; }

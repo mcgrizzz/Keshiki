@@ -6,7 +6,7 @@ Background scenes for Anki's main window that follow the sun through the day, an
 
 - **One picture across the whole window.** The toolbar, the main area and the bottom bar show one continuous image, with no seams where they meet.
 - **Day cycles.** Give a scene dawn, day, dusk and night versions. Each fades in between two moments of the sun you choose (from first light to sunrise, say), at a set time, or once the version before it is fully in, for the real sun where you are or the sunrise and sunset times you set.
-- **Light by the sun.** Optionally colour any picture by the sun's height: warm low sun, plain midday, blue twilight and a dim, faded night, based on published daylight measurements and night-vision research. At night, a picture's own lights (lit windows, lamps, stars) stay lit and glow softly.
+- **Light by the sun.** Optionally colour your day cycles (or every picture) by the sun's height: warm low sun, plain midday, blue twilight and a dim, faded night, based on published daylight measurements and night-vision research. At night, a picture's own lights (lit windows, lamps, stars) stay lit and glow softly.
 - **All done for today.** Show different scenes once nothing is left to study in any deck.
 - **Albums and shuffle.** Add a batch of pictures, or a whole folder, and they become an album; a folder's album can stay in step with the folder as you add to it. On a screen, an album's pictures take turns with its other scenes: every 15 minutes up to once a day, or each time Anki starts. A screen with a single scene keeps it.
 - **Readable.** Dim and blur are set separately for the deck list and for studying, and dimming follows Anki's light or dark theme.
@@ -16,18 +16,18 @@ Background scenes for Anki's main window that follow the sun through the day, an
 Open **Tools → 🖼️ Keshiki**.
 
 1. On **Screens**, choose **Add images...**. Several pictures become an album on the deck list, taking turns. Later, add pictures on **Scenes**; **Combine pictures...** there folds single-picture scenes into an album.
-2. On **Scenes**, choose **New day cycle**, then pick a picture for each version. Drag along the strip under the preview to see any time of day, or press ▶ to watch the next 24 hours as a timelapse. Anki's main window follows along until you press **Back to now**.
+2. On **Scenes**, under **New scene**, choose **Day cycle**, then pick a picture for each version. Drag along the strip under the preview to see any time of day, or press ▶ to watch the next 24 hours as a timelapse. Anki's main window follows along until you press **Back to now**.
 3. Back on **Screens**, give **Studying** its own scenes if you like, and set dim and blur.
 
 Your edits show in the main window as you make them. **Save** keeps them and **Cancel** puts things back.
 
 ![The Screens page: what shows behind the deck list and while you study](docs/images/settings-screens.png)
 
-<sub>Screenshots use stills from <i>Spirited Away</i> © Studio Ghibli.</sub>
+<sub>Screenshots use stills from Studio Ghibli films © Studio Ghibli.</sub>
 
-For day cycles that follow the real sun, choose **The sun where I am** on **Day & time**. Click **Find my location** to look up a rough location from your internet address (through ipapi.co). Nothing is sent until you click it. You can also type coordinates instead.
+For day cycles that follow the real sun, choose **Use my location** on **Day & time**. Click **Find my location** to look up a rough location from your internet address (through ipapi.co). Nothing is sent until you click it. You can also type coordinates instead.
 
-Images are copied into the add-on's `user_files` folder, so they stay when the add-on updates. **Pictures...** on the Scenes page shows which are in use; unused ones go to a trash, where you can restore them or empty it. A folder kept in step isn't copied at all, and × in its album hides a picture without touching the folder.
+Images are copied into the add-on's `user_files` folder, so they stay when the add-on updates. **Picture library & trash...** under the scene list shows which are in use; unused ones go to a trash, where you can restore them or empty it. A folder kept in step isn't copied at all, and hiding a picture in its album (the crossed-out eye) leaves the folder untouched.
 
 Keshiki needs Anki 26.08 or newer. Turn off other background add-ons (like Custom Background Image and Gear Icon) while you use it. They draw over its picture.
 

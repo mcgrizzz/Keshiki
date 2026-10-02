@@ -2,11 +2,11 @@
 
 Background scenes for Anki's main window that follow the sun through the day, and can change once you're done studying.
 
-![Screens page](docs/images/settings-screens.png)
+![The Screens page: what shows behind the deck list and while you study](docs/images/settings-screens.png)
 
 - **One picture across the whole window.** The toolbar, the main area and the bottom bar show one continuous image, with no seams where they meet.
-- **Day cycles.** Give a scene dawn, day, dusk and night versions. Each fades in as the sun passes a height you choose (dawn from -10° up to the horizon, say), for the real sun where you are or the sunrise and sunset times you set.
-- **Light by the sun.** Optionally colour any picture by the sun's height: warm low sun, plain midday, blue twilight and a dim, faded night, based on published daylight measurements and night-vision research.
+- **Day cycles.** Give a scene dawn, day, dusk and night versions. Each fades in between two moments of the sun you choose (from first light to sunrise, say), at a set time, or once the version before it is fully in, for the real sun where you are or the sunrise and sunset times you set.
+- **Light by the sun.** Optionally colour any picture by the sun's height: warm low sun, plain midday, blue twilight and a dim, faded night, based on published daylight measurements and night-vision research. At night, a picture's own lights (lit windows, lamps, stars) stay lit and glow softly.
 - **All done for today.** Show different scenes once nothing is left to study in any deck.
 - **Shuffle.** Pick several scenes for a screen and Keshiki crossfades between them every 15 minutes up to once a day.
 - **Readable.** Dim and blur are set separately for the deck list and for studying, and dimming follows Anki's light or dark theme.
@@ -23,6 +23,8 @@ Your edits show in the main window as you make them. **Save** keeps them and **C
 
 ![A day-cycle scene](docs/images/settings-scene.png)
 
+<sub>Screenshots use stills from <i>Spirited Away</i> © Studio Ghibli.</sub>
+
 For day cycles that follow the real sun, choose **The sun where I am** on **Day & time**. Click **Find my location** to look up a rough location from your internet address (through ipapi.co). Nothing is sent until you click it. You can also type coordinates instead.
 
 Images are copied into the add-on's `user_files` folder, so they stay when the add-on updates.
@@ -32,7 +34,7 @@ Keshiki needs Anki 26.08 or newer. Turn off other background add-ons (like Custo
 ## Development
 
 Keshiki's plumbing (wiring with Anki, settings page shell, live reload, build
-and test tooling) is [Kiso](../kiso), bundled into `keshiki/_kiso/` when it's
+and test tooling) is [Kiso](https://github.com/mcgrizzz/Kiso), bundled into `keshiki/_kiso/` when it's
 built.
 
 ```sh

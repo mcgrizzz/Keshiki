@@ -6,7 +6,15 @@ requires-python = ">=3.10"
 
 # `anki` and `aqt` are test-only: the add-on runs inside Anki and uses its copy.
 [project.optional-dependencies]
-dev = ["pytest", "ruff", "anki>=26.8"]
+dev = ["pytest", "ruff", "anki>=26.8", "kiso-anki"]
+
+# Kiso is bundled into keshiki/_kiso/ by `kiso bundle` (and by pytest, `kiso build`
+# and `kiso sync`); see ../kiso.
+[tool.kiso]
+package = "keshiki"
+root_files = ["__init__.py", "manifest.json", "config.json", "config.md"]
+dev_name = "Keshiki (dev)"
+kiso = "0.1"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -14,7 +22,7 @@ testpaths = ["tests"]
 # importlib mode stops pytest from importing it as a parent package.
 addopts = "--import-mode=importlib"
 # Deprecations raised in Keshiki, Anki or aqt code fail the test. Anki's
-# printed deprecation notices are caught separately (tests/anki_notices.py).
+# printed deprecation notices are caught by Kiso's pytest plugin.
 filterwarnings = [
     'error::DeprecationWarning:(keshiki|anki|aqt)(\.|$)',
     'error::PendingDeprecationWarning:(keshiki|anki|aqt)(\.|$)',
@@ -23,7 +31,7 @@ filterwarnings = [
 [tool.ruff]
 target-version = "py310"
 line-length = 120
-extend-exclude = ["dist"]
+extend-exclude = ["dist", "keshiki/_kiso"]
 
 [tool.ruff.lint]
 select = ["E4", "E9", "F", "B", "I"]

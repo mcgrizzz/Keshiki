@@ -188,7 +188,7 @@ def test_version_1_minutes_become_sun_heights():
         {"label": "Clock", "image": "c", "anchor": "clock", "offset": 600, "fade": 30}]}], "config_version": 1}
     cfg, changed = migrate(v1)
     dawn, dusk, clock = cfg["scenes"][0]["versions"]
-    assert changed and cfg["config_version"] == 2
+    assert changed and cfg["config_version"] == 3
     assert dawn == {"label": "Dawn", "image": "a", "anchor": "sun", "direction": "rising", "from": -12.0, "to": -3.0}
     assert dusk == {"label": "Dusk", "image": "b", "anchor": "sun", "direction": "setting", "from": 15.0, "to": 3.0}
     assert clock["anchor"] == "clock" and clock["offset"] == 600
@@ -241,3 +241,8 @@ def test_bloom_rides_along_with_a_pictures_lights():
     layer = light([{"image": "night", "opacity": 1.0}], {"tint": True, "tint_strength": 100, "bloom": 80},
                   23 * 60, anchors, stats.get, lambda n: "/l")[0]
     assert layer["bloom"] == 0.8
+
+
+def test_version_3_drops_the_smoothing_switch():
+    cfg, changed = migrate({"light": {"tint": True, "match": False, "match_strength": 40}, "config_version": 2})
+    assert changed and cfg["light"] == {"tint": True, "tint_strength": 70, "bloom": 50} and cfg["config_version"] == 3

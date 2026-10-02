@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import copy
 import secrets
 from typing import Any, Dict, List, Tuple
+
+from ._kiso import config as kiso_config
 
 # Top-level package name of the add-on (= installed folder name); the key for
 # addonManager.getConfig/writeConfig.
 ADDON_PACKAGE = __name__.split(".")[0]
 
-CONFIG_VERSION = 2
+CONFIG_VERSION = 3
 
 # "every" is how long a screen keeps one scene when it shuffles several, in
 # minutes; 0 picks a new one each time Anki starts.
@@ -107,42 +108,32 @@ def _stem(filename: str) -> str:
     return filename.rsplit(".", 1)[0].replace("_", " ").replace("-", " ").strip()
 
 
-def _fill(cfg: dict, defaults: dict) -> bool:
-    """Add keys missing from cfg (recursing into dicts). Returns whether it changed."""
-    changed = False
-    for k, v in defaults.items():
-        if k not in cfg:
-            cfg[k] = copy.deepcopy(v)
-            changed = True
-        elif isinstance(v, dict) and isinstance(cfg[k], dict) and k != "images":
-            changed |= _fill(cfg[k], v)
-    return changed
-
-
 def migrate(cfg: dict) -> Tuple[dict, bool]:
-    """Fill defaults and drop references to scenes that no longer exist. Returns (cfg, changed)."""
-    cfg = copy.deepcopy(cfg or {})
-    changed = _fill(cfg, DEFAULTS)
+    """Bring a config up to date and fill defaults; drop references to scenes that
+    no longer exist. Returns (cfg, changed)."""
+    cfg, changed = kiso_config.migrate(cfg, DEFAULTS, CONFIG_VERSION,
+                                       [(2, _sun_heights), (3, _smoothing_always_on)], free_form=["images"])
     ids = {s.get("id") for s in cfg["scenes"] if isinstance(s, dict)}
     for screen in cfg["screens"].values():
         kept = [i for i in screen.get("scenes") or [] if i in ids]
         if kept != screen.get("scenes"):
             screen["scenes"] = kept
             changed = True
-    if cfg.get("config_version", CONFIG_VERSION) < 2:
-        for scene in cfg["scenes"]:
-            for v in scene.get("versions") or []:
-                if scene.get("kind") == "day" and v.get("anchor") in ("sunrise", "sunset"):
-                    _to_sun(v)
-    # Smoothing the colour between versions is always on now; its switch went in version 2.
-    for key in ("match", "match_strength"):
-        if key in cfg["light"]:
-            del cfg["light"][key]
-            changed = True
-    if cfg.get("config_version") != CONFIG_VERSION:
-        cfg["config_version"] = CONFIG_VERSION
-        changed = True
     return cfg, changed
+
+
+def _sun_heights(cfg: dict) -> None:
+    """Version 2: day versions moved from minutes around sunrise and sunset to sun heights."""
+    for scene in cfg.get("scenes") or []:
+        for v in scene.get("versions") or []:
+            if scene.get("kind") == "day" and v.get("anchor") in ("sunrise", "sunset"):
+                _to_sun(v)
+
+
+def _smoothing_always_on(cfg: dict) -> None:
+    """Version 3: smoothing the colour between versions is always on; its switch went."""
+    for key in ("match", "match_strength"):
+        (cfg.get("light") or {}).pop(key, None)
 
 
 def _to_sun(v: dict) -> None:

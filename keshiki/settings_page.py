@@ -1,4 +1,5 @@
-"""The settings page: one HTML page in an AnkiWebView, talking to SettingsBridge over pycmd.
+"""The settings page: Keshiki's pages (web/settings.*) on Kiso's settings shell,
+talking to SettingsBridge over pycmd.
 
 The bridge works on plain dicts and takes its Qt side effects as callables,
 so it can be tested headless; the dialog keeps its aqt imports local.
@@ -7,29 +8,27 @@ so it can be tested headless; the dialog keeps its aqt imports local.
 from __future__ import annotations
 
 import json
-import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from . import library
+from ._kiso import settings as kiso_settings
 from .config import ADDON_PACKAGE, DEFAULTS, SUN_MOMENTS, migrate, new_scene, validate
 from .schedule import build_look, day_anchors, light, screen_source, version_starts
 from .schedule import compose as compose_layers
 from .sun import location_sun
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
-_PREFIX = "keshiki:"
 _GEOM_KEY = "keshikiSettings"
 
 
 def page_html() -> str:
     def read(name):
         return (WEB_DIR / name).read_text(encoding="utf-8")
-    # Inlined: nothing to serve, and the preview reuses the main window's layer code.
-    return (read("settings.html")
-            .replace("/*STYLE*/", read("layers.css") + read("settings.css"))
-            .replace("/*SCRIPT*/", read("layers.js") + read("settings.js")))
+    # The previews reuse the main window's layer code.
+    return kiso_settings.page_html(css=[read("layers.css"), read("settings.css")],
+                                   js=[read("layers.js"), read("settings.js")])
 
 
 def _now():
@@ -52,30 +51,21 @@ def _times(anchors: dict) -> dict:
     return {"sunrise": anchors["sunrise"], "sunset": anchors["sunset"]}
 
 
-class SettingsBridge:
-    def __init__(self, mw, renderer=None, *, close: Callable[[], None] = lambda: None,
+class SettingsBridge(kiso_settings.Bridge):
+    prefix = "keshiki:"
+
+    def __init__(self, mw, renderer=None, *, close: Optional[Callable[[], None]] = None,
                  pick_files: Callable[[], list] = lambda: [], open_folder: Callable[[Path], None] = lambda p: None,
                  in_background: Callable = lambda fn, done: done(fn()), eval_js: Callable[[str], None] = lambda js: None):
+        super().__init__(close=close)
         self.mw = mw
         self.renderer = renderer
-        self.close = close
         self.pick_files = pick_files
         self.open_folder = open_folder
         # in_background(fn, done): run fn off the main thread, then done(fn's result
         # or exception) on it. eval_js reaches the page after the reply has gone.
         self.in_background = in_background
         self.eval_js = eval_js
-        self.dirty = False
-
-    def handle(self, cmd: str) -> Any:
-        if not cmd.startswith(_PREFIX):
-            return None
-        try:
-            msg = json.loads(cmd[len(_PREFIX):])
-            return getattr(self, "op_" + msg["op"])(msg.get("arg"))
-        except Exception as exc:
-            logging.getLogger(__name__).exception("Keshiki settings request failed")
-            return {"error": str(exc)}
 
     def saved(self) -> dict:
         return migrate(self.mw.addonManager.getConfig(ADDON_PACKAGE) or {})[0]
@@ -113,13 +103,6 @@ class SettingsBridge:
     def op_end_moment(self, _arg) -> None:
         if self.renderer and self.renderer.scene_look is not None:
             self.renderer.show_scene_moment(None)
-
-    def op_dirty(self, value) -> None:
-        self.dirty = bool(value)
-
-    def op_close(self, _arg) -> None:
-        self.dirty = False
-        self.close()
 
     def op_import(self, _arg) -> dict:
         added = library.import_files(self.pick_files())
@@ -238,49 +221,25 @@ def open_settings(mw, renderer) -> None:
 
 
 def make_dialog(mw, renderer):
-    from aqt.qt import QDialog, QFileDialog, QTimer, QVBoxLayout
-    from aqt.utils import disable_help_button, openFolder, restoreGeom, saveGeom
-    from aqt.webview import AnkiWebView
+    from aqt.qt import QFileDialog
+    from aqt.utils import openFolder
 
-    class SettingsDialog(QDialog):
-        def reject(self):   # X / Esc
-            if bridge.dirty:
-                web.eval("askClose()")
-            else:
-                super().reject()
+    def bridge(dlg, web):
+        def pick_files():
+            paths, _ = QFileDialog.getOpenFileNames(
+                dlg, "Add background images", "", "Images (" + " ".join("*" + e for e in library.EXTENSIONS) + ")")
+            return paths
 
-    dlg = SettingsDialog(mw)
-    dlg.setWindowTitle("Keshiki Backgrounds")
-    disable_help_button(dlg)
-    layout = QVBoxLayout(dlg)
-    layout.setContentsMargins(0, 0, 0, 0)
-    web = AnkiWebView(parent=dlg, title="Keshiki settings")
-    layout.addWidget(web)
+        def in_background(fn, done):
+            mw.taskman.run_in_background(fn, lambda future: done(future.result()))
 
-    def pick_files():
-        paths, _ = QFileDialog.getOpenFileNames(
-            dlg, "Add background images", "", "Images (" + " ".join("*" + e for e in library.EXTENSIONS) + ")")
-        return paths
+        return SettingsBridge(mw, renderer, pick_files=pick_files, open_folder=lambda p: openFolder(str(p)),
+                              in_background=in_background, eval_js=lambda js: web.eval(js))
 
-    # Deferred so the bridge's reply reaches the page before the page goes.
-    def in_background(fn, done):
-        mw.taskman.run_in_background(fn, lambda future: done(future.result()))
-
-    bridge = SettingsBridge(mw, renderer, close=lambda: QTimer.singleShot(0, dlg.accept),
-                            pick_files=pick_files, open_folder=lambda p: openFolder(str(p)),
-                            in_background=in_background, eval_js=lambda js: web.eval(js))
-    dlg.keshiki_bridge, dlg.keshiki_web = bridge, web   # for tools/check_settings.py
-    web.set_bridge_command(bridge.handle, dlg)
-    web.stdHtml(page_html(), context=dlg)
-
-    def finished(_result):
-        saveGeom(dlg, _GEOM_KEY)
+    def finished():
         if renderer:
             renderer.scene_look = None
             renderer.set_preview(None)
-        web.cleanup()
 
-    dlg.finished.connect(finished)
-    dlg.resize(1100, 780)
-    restoreGeom(dlg, _GEOM_KEY)
-    return dlg
+    return kiso_settings.make_dialog(mw, title="Keshiki Backgrounds", html=page_html(), bridge=bridge,
+                                     geom_key=_GEOM_KEY, on_finished=finished)

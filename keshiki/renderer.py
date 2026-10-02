@@ -21,6 +21,8 @@ from aqt.qt import QEvent, QObject, QPoint, QTimer
 from aqt.webview import AnkiWebView, WebContent
 
 from . import library
+from ._kiso import config as kiso_config
+from ._kiso.hooks import Subscriptions, guard
 from .config import ADDON_PACKAGE, migrate
 from .schedule import build_look
 from .sun import location_sun
@@ -36,10 +38,7 @@ STUDY_STATES = ("overview", "review")
 
 
 def load_config(mw) -> dict:
-    cfg, changed = migrate(mw.addonManager.getConfig(ADDON_PACKAGE) or {})
-    if changed:
-        mw.addonManager.writeConfig(ADDON_PACKAGE, cfg)
-    return cfg
+    return kiso_config.load(mw.addonManager, ADDON_PACKAGE, migrate)
 
 
 class Renderer(QObject):
@@ -55,49 +54,31 @@ class Renderer(QObject):
         self._all_done: Optional[bool] = None
         self._geometry_queued = False
         self.enabled = True   # False once turned off in Tools > Add-ons, until Anki restarts
-        self._hooks: list = []
-        self.timer = QTimer(self)
-        self.timer.timeout.connect(self._guard(self.refresh))
+        self.subs = Subscriptions(log)
         self._web_assets = (WEB / "layers.css").read_text(encoding="utf-8"), \
             (WEB / "layers.js").read_text(encoding="utf-8")
 
     # -- wiring -----------------------------------------------------------
 
     def install(self) -> None:
-        self._hooks = [
-            (gui_hooks.webview_will_set_content, self._guard(self.on_will_set_content)),
-            (gui_hooks.webview_did_inject_style_into_page, self._guard(self.on_did_inject_style)),
-            (gui_hooks.state_did_change, self._guard(lambda *_: self.refresh(progress_changed=True))),
-            (gui_hooks.reviewer_did_answer_card, self._guard(lambda *_: self.refresh(progress_changed=True))),
-            (gui_hooks.operation_did_execute, self._guard(self.on_operation)),
-            # A new day brings new cards: "all done" may no longer hold.
-            (gui_hooks.day_did_change, self._guard(lambda *_: self.refresh(progress_changed=True))),
-        ]
-        for hook, fn in self._hooks:
-            hook.append(fn)
+        refresh_progress = lambda *_: self.refresh(progress_changed=True)  # noqa: E731
+        self.subs.add(gui_hooks.webview_will_set_content, self.on_will_set_content, "Page background")
+        self.subs.add(gui_hooks.webview_did_inject_style_into_page, self.on_did_inject_style, "Page background")
+        self.subs.add(gui_hooks.state_did_change, refresh_progress, "Screen change")
+        self.subs.add(gui_hooks.reviewer_did_answer_card, refresh_progress, "Answer")
+        self.subs.add(gui_hooks.operation_did_execute, self.on_operation, "Collection change")
+        # A new day brings new cards: "all done" may no longer hold.
+        self.subs.add(gui_hooks.day_did_change, refresh_progress, "New day")
+        self.subs.timer(self, TICK_MS, self.refresh, "Background tick")
         for widget in self._webviews() + [self.mw.form.centralwidget]:
             widget.installEventFilter(self)
-        self.timer.start(TICK_MS)
 
-    def uninstall(self) -> None:
+    def teardown(self) -> None:
         """Undo install(), for a dev reload; pages keep their background until redrawn."""
-        for hook, fn in self._hooks:
-            hook.remove(fn)
-        self._hooks = []
+        self.subs.remove_all()
         for widget in self._webviews() + [self.mw.form.centralwidget]:
             widget.removeEventFilter(self)
-        self.timer.stop()
         self.deleteLater()
-
-    def _guard(self, fn):
-        # Anki drops a hook subscriber that raises; log instead so one bad
-        # moment doesn't switch the background off for the session.
-        def run(*args):
-            try:
-                return fn(*args)
-            except Exception:
-                log.exception("Keshiki: %s failed", getattr(fn, "__name__", "hook"))
-        return run
 
     def _webviews(self):
         return [self.mw.toolbarWeb, self.mw.web, self.mw.bottomWeb]
@@ -105,7 +86,7 @@ class Renderer(QObject):
     def eventFilter(self, obj, event) -> bool:
         if event.type() in (QEvent.Type.Resize, QEvent.Type.Move) and not self._geometry_queued:
             self._geometry_queued = True
-            QTimer.singleShot(0, self._guard(self.push_geometry))
+            QTimer.singleShot(0, guard(self.push_geometry, log, "Background geometry"))
         return False
 
     # -- config -----------------------------------------------------------

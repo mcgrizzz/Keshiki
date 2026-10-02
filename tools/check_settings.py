@@ -3,7 +3,13 @@ live preview in the main window, save, and screenshots of each page."""
 
 import json
 
-from qt_harness import addon, aqt, js, make_test_image, pump, run, until
+# isort: off
+# kiso_dev.harness sets Qt up for offscreen use before aqt loads, so it comes first.
+from kiso_dev.harness import addon, js, pump, run, until
+
+import aqt
+from images import make_test_image
+# isort: on
 
 HELPERS = """
 const $ = (s) => document.querySelector(s);
@@ -21,21 +27,21 @@ def check(app, shots, base):
 
     files = [str(make_test_image(base / f"{name}.png", hue)) for name, hue in
              (("dawn", 330), ("day", 200), ("dusk", 25), ("night", 240))]
-    renderer = addon()._renderer
+    renderer = addon().addon.feature
 
     def open_page():
         dlg = make_dialog(mw, renderer)
-        dlg.keshiki_bridge.pick_files = lambda: files
+        dlg.kiso_bridge.pick_files = lambda: files
         # No network in checks: the location lookup answers at once.
-        dlg.keshiki_bridge.in_background = lambda fn, done: done(
+        dlg.kiso_bridge.in_background = lambda fn, done: done(
             {"latitude": 35.68, "longitude": 139.65, "place": "Tokyo, Japan"})
         dlg.show()
-        until(app, lambda: js(app, dlg.keshiki_web, "window.keshikiReady === true"), 15, "settings page never loaded")
+        until(app, lambda: js(app, dlg.kiso_web, "window.kisoReady === true"), 15, "settings page never loaded")
         return dlg
 
     def run_js(dlg, code):
         # Own scope per call; eval returns the last statement's value.
-        return js(app, dlg.keshiki_web, f"(() => {{ {HELPERS} return eval({json.dumps(code)}); }})()")
+        return js(app, dlg.kiso_web, f"(() => {{ {HELPERS} return eval({json.dumps(code)}); }})()")
 
     def shoot(dlg, name):
         pump(app, 0.8)

@@ -3,7 +3,13 @@ across the toolbar and bottom-bar seams, follows screen changes and progress."""
 
 import json
 
-from qt_harness import addon, aqt, js, make_test_image, pump, run, until
+# isort: off
+# kiso_dev.harness sets Qt up for offscreen use before aqt loads, so it comes first.
+from kiso_dev.harness import addon, js, pump, run, until
+
+import aqt
+from images import make_test_image
+# isort: on
 
 
 def stage_state(app, web):
@@ -27,7 +33,7 @@ def seam_mismatch(img, y, x0, x1):
 def check(app, shots, base):
     mw = aqt.mw
     pkg = addon()
-    renderer = pkg._renderer
+    renderer = pkg.addon.feature
     from keshiki.keshiki import library
     from keshiki.keshiki.config import migrate, new_scene
 

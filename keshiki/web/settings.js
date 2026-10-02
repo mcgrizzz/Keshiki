@@ -1,19 +1,16 @@
-/* Keshiki settings page. No build step: plain DOM through h(). Text always goes
-   through textContent. Python computes every look (settings_page.py), so the
-   previews show exactly what the main window will. */
+/* Keshiki's settings pages, on Kiso's settings shell (shell.js: S, saved, draft,
+   page, h, call, changed, render, pageHead, slider, radio, openModal...).
+   Python computes every look (settings_page.py), so the previews show exactly
+   what the main window will. */
 
-let S = null;          // state from Python: defaults, templates, percent
-let saved = null;      // the saved config
-let draft = null;      // the config being edited
 let images = [];       // the image library
-let page = "screens";
 let sel = null;        // selected scene id on the Scenes page
 let scrub = null;      // scene editor position: minutes of day or percent done
 
 const EVERY = [[0, "Each time Anki starts"], [15, "15 minutes"], [30, "30 minutes"], [60, "Hour"],
                [180, "3 hours"], [1440, "Day"]];
 const KIND_NAMES = { single: "Single image", day: "Day cycle", progress: "Review progress" };
-const ICONS = {
+Object.assign(ICONS, {
   screens: "M3 5h18v12H3zM8 21h8M12 17v4",
   scenes: "M3 18l5-6 4 4 3-3 6 5M3 5h18v14H3zM15.5 9.5a1.5 1.5 0 1 0 0-.01",
   day: "M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4M12 8a4 4 0 1 0 0 8a4 4 0 1 0 0-8",
@@ -21,41 +18,8 @@ const ICONS = {
   trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
   play: "M8 5v14l11-7z",
   pause: "M8 5v14M16 5v14",
-};
+});
 
-function call(op, arg) {
-  return new Promise((resolve) => pycmd("keshiki:" + JSON.stringify({ op, arg }), resolve));
-}
-
-function h(tag, attrs, ...kids) {
-  const el = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs || {})) {
-    if (v === null || v === undefined || v === false) continue;
-    if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
-    else if (k === "style" && typeof v === "object") Object.assign(el.style, v);
-    else if (k in el && k !== "list" && k !== "form") el[k] = v;
-    else el.setAttribute(k, v === true ? "" : v);
-  }
-  for (const kid of kids.flat()) {
-    if (kid === null || kid === undefined || kid === false) continue;
-    el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
-  }
-  return el;
-}
-
-function icon(name) {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("class", "icon");
-  svg.setAttribute("aria-hidden", "true");
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  path.setAttribute("d", ICONS[name]);
-  svg.append(path);
-  return svg;
-}
-
-const clone = (x) => JSON.parse(JSON.stringify(x));
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const sceneById = (id) => draft.scenes.find((s) => s.id === id);
 const imageUrl = (name) => (images.find((i) => i.name === name) || {}).url;
 const thumbUrl = (name) => (images.find((i) => i.name === name) || {}).thumb;
@@ -71,113 +35,9 @@ function sceneThumb(scene) {
   return v ? thumbUrl(v.image) : null;
 }
 
-// -- change tracking ----------------------------------------------------
-
-// What each page edits, for its unsaved dot and its Revert / Restore actions.
-const PAGES = [["screens", "Screens"], ["scenes", "Scenes"], ["day", "Day & time"]];
-const SLICE = {
-  screens: (d) => d.screens,
-  scenes: (d) => [d.scenes, d.images],
-  day: (d) => [d.day, d.transition_seconds, d.light],
-};
-const pageChanged = (p) => !same(SLICE[p](draft), SLICE[p](saved));
-
 function dropMissingScenes(d) {
   const ids = new Set(d.scenes.map((s) => s.id));
   for (const screen of Object.values(d.screens)) screen.scenes = screen.scenes.filter((id) => ids.has(id));
-}
-
-const REVERT = {
-  screens: (d) => { d.screens = clone(saved.screens); dropMissingScenes(d); },
-  scenes: (d) => {
-    // New scenes a screen still uses stay, so reverting here can't change another page.
-    const used = new Set(Object.values(d.screens).flatMap((s) => s.scenes));
-    const kept = d.scenes.filter((s) => used.has(s.id) && !saved.scenes.some((x) => x.id === s.id));
-    d.scenes = clone(saved.scenes).concat(kept);
-    d.images = clone(saved.images);
-  },
-  day: (d) => { d.day = clone(saved.day); d.transition_seconds = saved.transition_seconds; d.light = clone(saved.light); },
-};
-
-// No Restore for Scenes: the default is no scenes at all.
-const RESTORE = {
-  screens: (d) => {
-    // Dim, blur and shuffle go back to defaults; which scenes show stays.
-    for (const [key, screen] of Object.entries(d.screens)) {
-      const kept = { scenes: screen.scenes };
-      if ("same_as_main" in screen) kept.same_as_main = screen.same_as_main;
-      d.screens[key] = Object.assign(clone(S.defaults.screens[key]), kept);
-    }
-  },
-  day: (d) => {
-    d.day = clone(S.defaults.day);
-    d.transition_seconds = S.defaults.transition_seconds;
-    d.light = clone(S.defaults.light);
-  },
-};
-
-// Each action shows only when it would change something; both wait for Save.
-function pageActions() {
-  const restore = RESTORE[page];
-  const wouldRestore = restore && (() => { const d = clone(draft); restore(d); return !same(SLICE[page](d), SLICE[page](draft)); })();
-  return h("div", { className: "head-actions" },
-    pageChanged(page) && h("button", { type: "button", className: "quiet", id: "revertPage",
-      title: "Undo unsaved changes on this page only. Other pages keep theirs.",
-      onclick: () => { REVERT[page](draft); changed(true); } }, "Revert this page"),
-    wouldRestore && h("button", { type: "button", className: "quiet", id: "restorePage",
-      title: page === "screens" ? "Dim, blur and shuffle back to their defaults; your scenes stay. Nothing changes until Save."
-                                : "Back to this page's defaults. Nothing changes until Save.",
-      onclick: () => { restore(draft); changed(true); } }, "Restore defaults"));
-}
-
-function pageHead(title, lead) {
-  return [h("header", { className: "page-head" }, h("h1", {}, title), pageActions()),
-          lead && h("p", { className: "lead" }, lead)];
-}
-
-let pushTimer = null;
-function changed(rerender) {
-  const dirtyPages = PAGES.filter(([id]) => pageChanged(id)).length;
-  const dirty = !same(draft, saved);
-  // Neither Save nor Cancel closes the window; only X or Esc does (asking first when there are unsaved edits).
-  document.getElementById("save").disabled = !dirty;
-  document.getElementById("cancel").disabled = !dirty;
-  document.getElementById("status").textContent = dirty
-    ? `Unsaved changes on ${dirtyPages || 1} page${dirtyPages > 1 ? "s" : ""}, previewing in the main window` : "";
-  document.getElementById("errors").textContent = "";
-  call("dirty", dirty);
-  if (rerender) render();
-  else {
-    // Cheap, so it runs on every edit without rebuilding the page (and losing the field's focus).
-    renderNav();
-    const actions = document.querySelector(".head-actions");
-    if (actions) actions.replaceWith(pageActions());
-  }
-  clearTimeout(pushTimer);
-  pushTimer = setTimeout(() => {
-    call("draft", dirty ? draft : null);
-    refreshPreviews();
-  }, 120);
-}
-
-// -- shell --------------------------------------------------------------
-
-function renderNav() {
-  const nav = document.getElementById("nav");
-  nav.replaceChildren(
-    h("div", { className: "brand" }, h("b", { lang: "ja" }, "景色"), h("span", {}, "Keshiki")),
-    ...PAGES.map(([id, label]) =>
-      h("button", { type: "button", "aria-current": page === id ? "true" : "false",
-                    onclick: () => { page = id; render(); } }, icon(id), label,
-        draft && pageChanged(id) && h("span", { className: "dot", title: "Unsaved changes" }, "•"))));
-}
-
-function render() {
-  renderNav();
-  if (page !== "scenes") { stopPlaying(); call("end_moment"); }
-  const main = document.getElementById("main");
-  main.replaceChildren(...({ screens: screensPage, scenes: scenesPage, day: dayPage }[page])().flat(Infinity).filter(Boolean));
-  refreshPreviews();
 }
 
 // -- previews -------------------------------------------------------------
@@ -268,10 +128,6 @@ function welcome() {
     h("button", { type: "button", className: "primary", onclick: () => addImagesAsScenes(true) }, "Add images..."));
 }
 
-function radio(name, checked, label, onchange) {
-  return h("label", { className: "check" }, h("input", { type: "radio", name, checked, onchange }), label);
-}
-
 function sceneChooser(screen) {
   const options = draft.scenes.filter((s) => !screen.scenes.includes(s.id));
   const add = h("select", { "aria-label": "Add a scene", onchange: (e) => {
@@ -302,15 +158,6 @@ function lookControls(screen) {
     slider("Dim", screen.dim, 0, 90, "%", (v) => { screen.dim = v; }),
     slider("Blur", screen.blur, 0, 30, "px", (v) => { screen.blur = v; }),
   ];
-}
-
-function slider(label, value, min, max, unit, set) {
-  const out = h("output", {}, value + unit);
-  return h("div", { className: "field" }, h("label", {}, label),
-    h("div", { className: "slider" },
-      h("input", { type: "range", min, max, value, "aria-label": label,
-                   oninput: (e) => { set(Number(e.target.value)); out.textContent = e.target.value + unit; changed(); } }),
-      out));
 }
 
 // -- Scenes page ---------------------------------------------------------
@@ -779,17 +626,6 @@ function pickImage(current, use) {
   drawGrid(); drawSide();
 }
 
-function openModal(dialog) {
-  const overlay = h("div", { className: "overlay", onclick: (e) => { if (e.target === overlay) closeModal(); } }, dialog);
-  document.getElementById("modal").replaceChildren(overlay);
-  const first = dialog.querySelector("button.primary") || dialog.querySelector("button");
-  if (first) first.focus();
-}
-
-function closeModal() {
-  document.getElementById("modal").replaceChildren();
-}
-
 // -- Day & time page -----------------------------------------------------
 
 // A location lookup in flight, or the last one's error.
@@ -901,59 +737,67 @@ function lightPanel() {
   );
 }
 
-// -- footer ---------------------------------------------------------------
+// -- pages ------------------------------------------------------------------
 
-async function save() {
-  const res = await call("save", draft);
-  if (res.errors) {
-    const err = res.errors[0];
-    document.getElementById("errors").textContent = err.message;
-    if (err.page === "scenes") sel = err.field;
-    page = err.page;
-    render();
-    const el = document.querySelector(`[data-field="${err.field}"]`);
-    if (el) el.focus();
-    return false;
-  }
-  saved = clone(res.cfg);
-  draft = clone(res.cfg);
-  changed(true);
-  document.getElementById("status").textContent = "Saved";
-  return true;
-}
+let pushTimer = null;
 
-window.askClose = () => {
-  openModal(h("div", { className: "dialog small" },
-    h("h2", {}, "Save your changes?"),
-    h("p", { className: "help" }, "Your edits haven't been saved."),
-    h("div", { className: "dialog-foot" },
-      h("button", { type: "button", onclick: closeModal }, "Keep editing"),
-      h("button", { type: "button", onclick: () => call("close") }, "Discard"),
-      h("button", { type: "button", className: "primary", onclick: async () => { if (await save()) call("close"); } }, "Save"))));
-};
-
-document.getElementById("save").addEventListener("click", save);
-// Cancel: drop unsaved edits on every page and go back to what's saved (Revert this page is the per-page version).
-document.getElementById("cancel").addEventListener("click", () => {
-  stopPlaying();
-  draft = clone(saved);
-  changed(true);
-  document.getElementById("status").textContent = "Unsaved changes discarded";
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && document.getElementById("modal").firstChild) { e.stopPropagation(); closeModal(); }
-}, true);
-
-(function start() {
-  if (typeof pycmd !== "function") return setTimeout(start, 20);   // web channel not ready yet
-  call("state").then((state) => {
-    S = state;
+Kiso.setup({
+  prefix: "keshiki",
+  brand: () => [h("b", { lang: "ja" }, "景色"), h("span", {}, "Keshiki")],
+  pages: [
+    {
+      id: "screens", title: "Screens", icon: "screens", render: screensPage,
+      slice: (d) => d.screens,
+      revert: (d) => { d.screens = clone(saved.screens); dropMissingScenes(d); },
+      // Dim, blur and shuffle go back to defaults; which scenes show stays.
+      restore: (d) => {
+        for (const [key, screen] of Object.entries(d.screens)) {
+          const kept = { scenes: screen.scenes };
+          if ("same_as_main" in screen) kept.same_as_main = screen.same_as_main;
+          d.screens[key] = Object.assign(clone(S.defaults.screens[key]), kept);
+        }
+      },
+      restoreTitle: "Dim, blur and shuffle back to their defaults; your scenes stay. Nothing changes until Save.",
+    },
+    {
+      // No Restore for Scenes: the default is no scenes at all.
+      id: "scenes", title: "Scenes", icon: "scenes", render: scenesPage,
+      slice: (d) => [d.scenes, d.images],
+      revert: (d) => {
+        // New scenes a screen still uses stay, so reverting here can't change another page.
+        const used = new Set(Object.values(d.screens).flatMap((s) => s.scenes));
+        const kept = d.scenes.filter((s) => used.has(s.id) && !saved.scenes.some((x) => x.id === s.id));
+        d.scenes = clone(saved.scenes).concat(kept);
+        d.images = clone(saved.images);
+      },
+    },
+    {
+      id: "day", title: "Day & time", icon: "day", render: dayPage,
+      slice: (d) => [d.day, d.transition_seconds, d.light],
+      revert: (d) => { d.day = clone(saved.day); d.transition_seconds = saved.transition_seconds; d.light = clone(saved.light); },
+      restore: (d) => {
+        d.day = clone(S.defaults.day);
+        d.transition_seconds = S.defaults.transition_seconds;
+        d.light = clone(S.defaults.light);
+      },
+    },
+  ],
+  unsaved: (pages) => `Unsaved changes on ${pages}, previewing in the main window`,
+  onLoad: (state) => {
     S.anchors = { sunrise: 390, sunset: 1170 };
     S.window = S.window || [16, 10];
-    saved = clone(state.cfg);
-    draft = clone(state.cfg);
     images = state.images;
-    render();
-    window.keshikiReady = true;   // for tools/check_settings.py
-  });
-})();
+  },
+  // Unsaved edits preview live in the main window (and in the page's own previews).
+  onChange: (dirty) => {
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(() => {
+      call("draft", dirty ? draft : null);
+      refreshPreviews();
+    }, 120);
+  },
+  beforeRender: (p) => { if (p !== "scenes") { stopPlaying(); call("end_moment"); } },
+  afterRender: () => refreshPreviews(),
+  onCancel: () => stopPlaying(),
+  onSaveError: (err) => { if (err.page === "scenes") sel = err.field; },
+});

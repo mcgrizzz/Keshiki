@@ -1,7 +1,13 @@
 """Real-Anki check of the add-on plumbing: reload without a restart, and
 turning Keshiki off and on in Tools > Add-ons."""
 
-from qt_harness import addon, aqt, js, make_test_image, run, until
+# isort: off
+# kiso_dev.harness sets Qt up for offscreen use before aqt loads, so it comes first.
+from kiso_dev.harness import addon, js, run, until
+
+import aqt
+from images import make_test_image
+# isort: on
 
 
 def background_on(app, web):
@@ -19,15 +25,15 @@ def check(app, shots, base):
     cfg["scenes"] = [scene]
     cfg["screens"]["main"]["scenes"] = [scene["id"]]
     mw.addonManager.writeConfig("keshiki", cfg)
-    addon()._renderer.set_config(cfg)
+    addon().addon.feature.set_config(cfg)
     webs = [mw.toolbarWeb, mw.web, mw.bottomWeb]
     until(app, lambda: all(background_on(app, w) for w in webs), 10, "no background to start with")
 
-    old = addon()._renderer
+    old = addon().addon.feature
     message = addon().reload_addon()
     assert message.startswith("reloaded"), message
-    new = addon()._renderer
-    assert new is not old and old._hooks == []
+    new = addon().addon.feature
+    assert new is not old and old.subs._hooks == []
     until(app, lambda: all(background_on(app, w) for w in webs), 10, "background missing after reload")
     # Only the new renderer answers the hooks: one stage per page, not two.
     assert js(app, mw.web, "document.querySelectorAll('.keshiki-stage').length") == 1

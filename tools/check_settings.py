@@ -218,6 +218,22 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "$$('.version').length") == 4, 5)
     print("PASS: a new version starts as the one above is fully in, plus a wait, with no time to set.")
 
+    # A narrow window: each version takes two lines, so its dropdowns keep their width.
+    row = """(() => { const v = $$('.version')[0], name = v.querySelector('input.label').getBoundingClientRect();
+        const sel = [...v.querySelectorAll('select')].map(s => s.getBoundingClientRect());
+        return { twoLines: sel[0].top >= name.bottom, widths: sel.map(r => Math.round(r.width)),
+                 overflow: Math.max(...$$('.versions *').map(e => e.getBoundingClientRect().right))
+                           - $('.versions').getBoundingClientRect().right }; })()"""
+    dlg.resize(800, 780)
+    until(app, lambda: run_js(dlg, row)["twoLines"], 5, "versions stay on one line in a narrow window")
+    narrow = run_js(dlg, row)
+    assert min(narrow["widths"]) >= 170 and narrow["overflow"] <= 0, narrow
+    shoot(dlg, "versions-narrow")
+    dlg.resize(1100, 780)
+    until(app, lambda: not run_js(dlg, row)["twoLines"], 5, "versions stay on two lines in a wide window")
+    assert run_js(dlg, row)["overflow"] <= 0
+    print("PASS: in a narrow window each version takes two lines, and its dropdowns keep their width.")
+
     # Delete scene asks first, with focus on the safe answer; No keeps the scene.
     count = run_js(dlg, "draft.scenes.length")
     run_js(dlg, "$('#deleteScene').click()")

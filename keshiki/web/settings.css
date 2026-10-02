@@ -116,6 +116,29 @@
 .image-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .image-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* A narrow editor (its own width, not the window's: the scene list may sit beside it or
+   above it): each version takes two lines, its name above when it starts and when it's
+   fully in, so the dropdowns keep their width. */
+.editor { container-type: inline-size; }
+@container (max-width: 600px) {   /* one line needs about 600px: picture, name, two dropdowns, remove */
+  /* Line one: the name and its remove button; line two: starts and fully in. Dense placement
+     puts each remove button back up on its name's line; the heading row is kept free of gaps
+     so nothing lands there. */
+  .versions:not(.single) { grid-template-columns: 64px minmax(0, 1.2fr) minmax(0, 1fr) 28px; grid-auto-flow: row dense; }
+  .versions:not(.single) .vhead span:nth-child(2) { display: none; }
+  .versions:not(.single) .vhead span:nth-child(1) { grid-column: 1; }
+  .versions:not(.single) .vhead span:nth-child(3) { grid-column: 2; }
+  .versions:not(.single) .vhead span:nth-child(4) { grid-column: 3; }
+  .versions:not(.single) .vhead span:nth-child(5) { grid-column: 4; }
+  .versions:not(.single) .version > .pick { grid-column: 1; grid-row: span 2; align-self: center; }
+  .versions:not(.single) .version > input.label { grid-column: 2 / 4; }
+  .versions:not(.single) .version > :nth-child(3) { grid-column: 2; }
+  .versions:not(.single) .version > :nth-child(4) { grid-column: 3 / 5; }
+  .versions:not(.single) .version > :nth-child(5) { grid-column: 4; }
+  .versions:not(.single) .version select { width: 100%; max-width: none; }
+  .versions:not(.single) .version > .unit > select { flex: 1 1 100%; }
+}
+
 /* A narrow window: the scene list becomes a strip above the editor, which gets the full width. */
 @media (max-width: 920px) {
   .scenes { grid-template-columns: minmax(0, 1fr); }

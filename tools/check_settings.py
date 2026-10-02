@@ -82,7 +82,7 @@ def check(app, shots, base):
 
     # A day cycle from the template, one image per version.
     run_js(dlg, "byText('#nav button', 'Scenes').click()")
-    run_js(dlg, "byText('button', 'New day cycle').click()")
+    run_js(dlg, "$('#addDay').click()")
     until(app, lambda: run_js(dlg, "$$('.version').length") == 4, 5, "day cycle template missing")
     for i, name in enumerate(["dawn", "day", "dusk", "night"]):
         run_js(dlg, f"$$('.version .pick')[{i}].click()")
@@ -94,6 +94,8 @@ def check(app, shots, base):
           5, "the dawn version doesn't start at First light")
     assert run_js(dlg, "$$('.version select')[1].selectedOptions[0].textContent").startswith("Sunrise ·")
     assert run_js(dlg, "!$('.versions').textContent.includes('°')"), "sun degrees still show"
+    assert run_js(dlg, "$$('.vhead span').map(s => s.textContent)") == ["Version", "Transition starts", "Transition ends"]
+    assert run_js(dlg, "$('#playSpeed').selectedOptions[0].textContent") == "24 h in 10 s"
     # Scrub to 13:00: the preview shows the day image alone.
     run_js(dlg, "setv($('.ribbon input'), 780)")
     until(app, lambda: run_js(dlg, "$('.preview .readout').textContent") == "13:00", 5)
@@ -199,6 +201,9 @@ def check(app, shots, base):
     # Editing the time keeps the box's focus and the page's scroll position.
     run_js(dlg, "const m = $('main'); m.scrollTop = m.scrollHeight; window._top = m.scrollTop")
     assert run_js(dlg, "window._top") > 0, "the page doesn't scroll in this window"
+    # Scrolled down, the scene list and its New scene buttons stay in view.
+    assert run_js(dlg, """(() => { const m = $('main').getBoundingClientRect(), b = $('#addDay').getBoundingClientRect();
+        return b.top >= m.top && b.bottom <= m.bottom; })()"""), "the scene list scrolled away with the editor"
     run_js(dlg, "const t = $('.version input[type=time]'); t.focus(); setv(t, '22:15')")
     pump(app, 0.4)
     assert run_js(dlg, "document.activeElement === $('.version input[type=time]')"), "the time box lost its focus"
@@ -233,10 +238,25 @@ def check(app, shots, base):
     run_js(dlg, "const n = $$('.version input.label')[3]; n.value = 'Late night'; n.dispatchEvent(new Event('input'))")
     assert run_js(dlg, f"{starts}.selectedOptions[0].textContent") == "When Late night is fully in"
     run_js(dlg, "const n = $$('.version input.label')[3]; setv(n, 'Night')")
+    # Its wait and its length side by side on one line, today's times on a muted line under them.
+    lines = run_js(dlg, """(() => { const r = (s) => $$('.version')[4].querySelector(s).getBoundingClientRect();
+        return { wait: r('.c-wait input').top, fade: r('.c-fade input').top, select: r('select').bottom,
+                 range: r('.c-range').top, rangeText: $$('.version')[4].querySelector('.c-range').textContent }; })()""")
+    assert abs(lines["wait"] - lines["fade"]) < 2 and lines["wait"] > lines["select"] and lines["range"] > lines["fade"], lines
+    until(app, lambda: run_js(dlg, "$$('.version')[4].querySelector('.c-range').textContent").startswith("Today "), 5)
+    run_js(dlg, "$('main').scrollTop = $('main').scrollHeight")
     shoot(dlg, "scene-follows")
+    run_js(dlg, "$('main').scrollTop = 0")
     run_js(dlg, "$$('.version')[4].querySelector('[aria-label=\"Remove version\"]').click()")
     until(app, lambda: run_js(dlg, "$$('.version').length") == 4, 5)
     print("PASS: a new version starts as the one above is fully in, plus a wait, with no time to set.")
+
+    # A height that isn't a named moment (from an older version) says its time today.
+    run_js(dlg, f"Object.assign({day_scene}.versions[1], {{ direction: 'rising', from: 15 }}); changed(true)")
+    until(app, lambda: "·" in run_js(dlg, "$$('.version')[1].querySelector('select').selectedOptions[0].textContent"), 5,
+          "a sun height without a name has no time")
+    assert run_js(dlg, "$$('.version')[1].querySelector('select').selectedOptions[0].textContent").startswith("Sun at 15° (morning) · ")
+    run_js(dlg, f"Object.assign({day_scene}.versions[1], {{ from: 6 }}); changed(true)")
 
     # A narrow window: each version takes two lines, so its dropdowns keep their width.
     row = """(() => { const v = $$('.version')[0], name = v.querySelector('input.label').getBoundingClientRect();
@@ -324,7 +344,7 @@ def check(app, shots, base):
 
     # Use the day cycle while studying, then save.
     run_js(dlg, "byText('#nav button', 'Screens').click()")
-    run_js(dlg, "byText('label', 'Scenes of its own').querySelector('input').click()")
+    run_js(dlg, "byText('label', 'Choose different scenes').querySelector('input').click()")
     run_js(dlg, "const sel = $$('select[aria-label=\"Add a scene\"]')[1]; setv(sel, [...sel.options].find(o => o.text === 'Day cycle').value)")
     run_js(dlg, "$('#save').click()")
     until(app, lambda: run_js(dlg, "$('#status').textContent") == "Saved", 5, "save didn't finish")
@@ -335,15 +355,18 @@ def check(app, shots, base):
     assert cfg["screens"]["study"] == dict(cfg["screens"]["study"], same_as_main=False, scenes=[day_id]), cfg["screens"]
     assert len(cfg["screens"]["main"]["scenes"]) == 1 and renderer.preview is None
     shoot(dlg, "screens-saved")
-    assert run_js(dlg, "(() => { const [a, b] = $$('.two > .panel'); return Math.abs(a.offsetHeight - b.offsetHeight) <= 1; })()"), \
-        "Deck list and Studying panels differ in height"
+    # Each preview sits beside its controls, and All done for today starts within the window.
+    assert run_js(dlg, "$('[data-card=done] h2').getBoundingClientRect().bottom <= $('main').getBoundingClientRect().bottom"), \
+        "All done for today is below the fold"
+    assert run_js(dlg, """(() => { const c = $('[data-card=main]'), m = c.querySelector('.mock').getBoundingClientRect();
+        return m.right < c.querySelector('.screen-controls').getBoundingClientRect().left; })()"""), "the preview isn't beside its controls"
     print("PASS: save writes the config, keeps the window open and ends the live preview.")
 
     # A screen's scenes, and an album's pictures, take turns: the deck list (an album of four)
     # can shuffle; studying, with one day cycle, says how, and shuffles once it has the album too.
-    main_card, study_card = "$$('.two > .panel')[0]", "$$('.two > .panel')[1]"
+    main_card, study_card = "$('[data-card=main]')", "$('[data-card=study]')"
     assert run_js(dlg, f"!!{main_card}.querySelector('select.shuffle')")
-    assert run_js(dlg, f"!{study_card}.querySelector('select.shuffle') && !!{study_card}.querySelector('.shuffle-hint')")
+    assert run_js(dlg, f"!{study_card}.querySelector('select.shuffle') && !{study_card}.textContent.includes('Shuffle')")
     run_js(dlg, f"const a = {study_card}.querySelector('select[aria-label=\"Add a scene\"]'); "
                 "setv(a, [...a.options].find(o => o.text === 'Album').value)")
     until(app, lambda: run_js(dlg, "draft.screens.study.scenes.length") == 2, 5, "the album didn't join studying")
@@ -352,9 +375,18 @@ def check(app, shots, base):
     assert run_js(dlg, "draft.screens.main.scenes.length") == 1
     assert run_js(dlg, "!$('.combine')"), "combining belongs on the Scenes page"
     shoot(dlg, "screens-shuffle")
+    # The unsaved changes show in the footer, marked.
+    assert run_js(dlg, "$('#status').classList.contains('dirty')")
+    # Studying's options sit under its checkbox, and are disabled (not hidden) while it's off.
+    run_js(dlg, f"{study_card}.querySelector('.check input').click()")
+    until(app, lambda: run_js(dlg, f"{study_card}.querySelector('fieldset.dependent').disabled"), 5,
+          "studying's options aren't disabled with the checkbox off")
+    assert run_js(dlg, f"{study_card}.querySelectorAll('fieldset.dependent input[type=range]').length") == 2
+    shoot(dlg, "screens-study-off")
     run_js(dlg, "$('#cancel').click()")
     until(app, lambda: run_js(dlg, "draft.screens.study.scenes.length") == 1, 5)
-    print("PASS: each screen shows its shuffle once it has more than one turn.")
+    assert run_js(dlg, "!$('#status').classList.contains('dirty')")
+    print("PASS: each screen shows its shuffle once it has more than one turn; dependent options are disabled.")
 
     # Single pictures combine into an album on the Scenes page: the ticked ones go in, and a
     # screen that showed them shows the album where the first one was.
@@ -447,6 +479,9 @@ def check(app, shots, base):
     run_js(dlg, "$('#rescan').click()")
     until(app, lambda: run_js(dlg, "$$('.hidden-tile').length") == 1, 5)
     assert run_js(dlg, "$$('.album-tile').length") == 2, "a rescan brought a hidden picture back"
+    assert run_js(dlg, "$('.album-wrap details summary').textContent") == "Hidden pictures (1)"
+    run_js(dlg, "$('.album-wrap details summary').click()")
+    run_js(dlg, "$('.album-wrap .info').click()")
     shoot(dlg, "folder-album")
     run_js(dlg, "$('.hidden-tile .show').click()")
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 3, 5, "Show didn't bring it back")
@@ -528,32 +563,47 @@ def check(app, shots, base):
     print("PASS: Cancel drops unsaved edits without closing.")
 
     run_js(dlg, "byText('#nav button', 'Day & time').click()")
-    run_js(dlg, "byText('label', 'The sun where I am').querySelector('input').click()")
-    # Nothing is looked up until the button is pressed.
+    run_js(dlg, "byText('label', 'Use my location').querySelector('input').click()")
+    # Nothing is looked up until the button is pressed; until then the details are open.
     pump(app, 0.5)
-    assert run_js(dlg, "$('.locate span').textContent") == "Not set yet", "location was looked up without asking"
+    assert run_js(dlg, "$('.locate .place').textContent") == "Not set yet", "location was looked up without asking"
+    assert run_js(dlg, "!!$('[data-field=latitude]')")
     run_js(dlg, "$('#locate').click()")
-    until(app, lambda: run_js(dlg, "$('.locate span').textContent") == "Near Tokyo, Japan", 5, "location wasn't looked up")
-    assert run_js(dlg, "$('[data-field=latitude]').value + ',' + $('[data-field=longitude]').value") == "35.68,139.65"
-    until(app, lambda: "sunrise" in run_js(dlg, "$('.panel .help').textContent"), 5, "sun times didn't show")
-    assert run_js(dlg, "$('#locate').textContent") == "Find again"
+    until(app, lambda: run_js(dlg, "$('.locate .place').textContent") == "Near Tokyo, Japan", 5, "location wasn't looked up")
+    # Found: the everyday view is the place and today's sun; Change opens the details.
+    until(app, lambda: run_js(dlg, "$('.sun-today').textContent").startswith("Sunrise "), 5, "sun times didn't show")
+    assert run_js(dlg, "!$('[data-field=latitude]')"), "the coordinates aren't folded away"
     shoot(dlg, "day")
-    print("PASS: the Day & time page looks up a rough location once and works out today's sun.")
+    run_js(dlg, "$('#changeLocation').click()")
+    assert run_js(dlg, "$('[data-field=latitude]').value + ',' + $('[data-field=longitude]').value") == "35.68,139.65"
+    assert run_js(dlg, "$('#locate').textContent") == "Find again"
+    shoot(dlg, "day-change")
+    run_js(dlg, "$('#changeLocation').click()")
+    # Light: a picture in the light at a time picked on today's strip.
+    run_js(dlg, "byText('label', 'Light the pictures by the sun').querySelector('input').click()")
+    until(app, lambda: run_js(dlg, "$$('.light-preview .keshiki-layer').length") > 0, 5, "no light preview")
+    run_js(dlg, "setv($('.daylight-wrap input'), 1140)")
+    until(app, lambda: run_js(dlg, "$('.light-preview .readout').textContent") == "19:00", 5, "the strip didn't move the preview")
+    run_js(dlg, "$('main').scrollTop = $('main').scrollHeight")
+    shoot(dlg, "day-light")
+    run_js(dlg, "byText('label', 'Light the pictures by the sun').querySelector('input').click(); $('main').scrollTop = 0")
+    print("PASS: the Day & time page looks up a rough location once, works out today's sun, and previews the light.")
 
     # Per-page Revert and Restore: only that page changes, and only in the draft.
     assert run_js(dlg, "!!$('#revertPage') && !!byText('#nav button', 'Day & time').querySelector('.dot')")
     run_js(dlg, "$('#revertPage').click()")
-    until(app, lambda: run_js(dlg, "byText('label', 'Times I set').querySelector('input').checked"), 5, "Revert didn't undo the page")
+    until(app, lambda: run_js(dlg, "byText('label', 'Set sunrise and sunset').querySelector('input').checked"), 5, "Revert didn't undo the page")
     assert run_js(dlg, "!$('#revertPage') && !byText('#nav button', 'Day & time').querySelector('.dot') && $('#save').disabled")
     run_js(dlg, "byText('#nav button', 'Screens').click()")
     run_js(dlg, "setv($$('input[aria-label=Dim]')[0], '60')")
     until(app, lambda: run_js(dlg, "!!$('#restorePage')"), 5, "no Restore defaults after changing dim")
+    assert run_js(dlg, "$('#restorePage').textContent") == "Reset dim, blur and shuffle"
     run_js(dlg, "$('#restorePage').click()")
     until(app, lambda: run_js(dlg, "$$('input[aria-label=Dim]')[0].value") == "15", 5, "Restore didn't reset dim")
     assert run_js(dlg, "$$('.chip').length") == 2, "Restore dropped the chosen scenes"
     assert mw.addonManager.getConfig("keshiki")["screens"]["main"]["dim"] == 15
     run_js(dlg, "byText('#nav button', 'Day & time').click()")
-    run_js(dlg, "byText('label', 'The sun where I am').querySelector('input').click()")
+    run_js(dlg, "byText('label', 'Use my location').querySelector('input').click()")
     print("PASS: Revert and Restore defaults change only their own page.")
 
     # Unsaved edits ask before closing; Discard drops the preview.

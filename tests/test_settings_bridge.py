@@ -113,3 +113,14 @@ def test_moments_name_the_sun_with_todays_times():
     assert [m["key"] for m in moments][:4] == ["night-ends", "first-light", "dawn", "sunrise"]
     assert abs(by_key["sunrise"]["time"] - 390) <= 6 and abs(by_key["sunset"]["time"] - 1170) <= 6
     assert by_key["first-light"]["time"] < by_key["dawn"]["time"] < by_key["sunrise"]["time"] < by_key["noon"]["time"]
+
+
+def test_moments_give_other_heights_their_times_too():
+    day = {"source": "manual", "sunrise": "06:30", "sunset": "19:30"}
+    moments = send(bridge(), "moments", {"day": day, "extra": [["rising", 15], ["setting", 3]]})
+    named = [m for m in moments if not m.get("custom")]
+    custom = {(m["direction"], m["degrees"]): m["time"] for m in moments if m.get("custom")}
+    assert len(named) == 15 and set(custom) == {("rising", 15), ("setting", 3)}
+    by_key = {m["key"]: m["time"] for m in named}
+    assert by_key["mid-morning"] < custom[("rising", 15)] < by_key["morning"]   # between 12° and 20°, rising
+    assert by_key["golden"] < custom[("setting", 3)] < by_key["sunset"]        # between 6° and 0°, setting

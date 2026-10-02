@@ -1,25 +1,63 @@
 /* Keshiki's pages, on Kiso's settings shell (shell.css: tokens, layout, controls). */
 .daylight { height: 22px; border-radius: 5px; }
+/* Today's light, a strip that also picks the light preview's time. */
+.daylight-wrap { position: relative; }
+.daylight-wrap .hand { position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1.5px; border-radius: 2px;
+                       background: var(--kiso-fg); box-shadow: 0 0 0 1px var(--kiso-card); pointer-events: none; }
+.daylight-wrap input[type=range] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.daylight-wrap:focus-within { outline: 2px solid var(--kiso-link); outline-offset: 2px; border-radius: 5px; }
+/* Light: a small picture in that light beside its controls. */
+.indent-help { margin-left: 26px; }
+.light-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 4px 20px; align-items: start; margin-top: 10px; }
+.light-body.no-look { grid-template-columns: minmax(0, 1fr); }
+.light-controls > .field:first-child { margin-top: 0; }
+.light-preview { position: relative; aspect-ratio: var(--kk-window, 1.6); border-radius: 6px; overflow: hidden; isolation: isolate;
+                 background: var(--kiso-soft); }
+.light-preview .keshiki-stage { z-index: 0; }
+.light-preview .readout { position: absolute; z-index: 1; left: 8px; bottom: 6px; padding: 1px 7px; border-radius: 999px;
+                          background: #000a; color: #fff; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+@media (max-width: 860px) { .light-body { grid-template-columns: minmax(0, 1fr); } .light-preview { max-width: 260px; } }
+.location-edit { margin-top: 10px; padding: 2px 0 6px 14px; border-left: 2px solid var(--kiso-soft); }
+.location-edit > .field:first-child { margin-top: 4px; }
+#main #locate { margin: 0; }
 .locate { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-/* A miniature main window: the real layer code behind mock Anki chrome. */
+/* A miniature main window: the real layer code behind mock Anki chrome, which scales with
+   the miniature (9px text at 232px wide), so a smaller one is the same picture, smaller. */
 .mock { position: relative; aspect-ratio: 16 / 10; border-radius: 6px; overflow: hidden; isolation: isolate;
-        border: 1px solid var(--kiso-soft); background: var(--kiso-canvas); font-size: 9px; }
+        border: 1px solid var(--kiso-soft); background: var(--kiso-canvas); container-type: inline-size; }
 .mock .keshiki-stage { z-index: -1; }
+.mock-bar, .mock-table, .mock-card, .mock-buttons { font-size: min(9px, 3.88cqw); }
 .mock-bar { display: flex; justify-content: center; }
-.mock-pill { background: var(--canvas-elevated, #fff); padding: 3px 10px; border-radius: 0 0 6px 6px;
-             font-weight: 700; word-spacing: 6px; box-shadow: 0 1px 3px #0003; }
-.mock-table { width: 56%; margin: 7% auto 0; padding: 6px 8px; border-radius: 6px;
+.mock-pill { background: var(--canvas-elevated, #fff); padding: .33em 1.1em; border-radius: 0 0 .67em .67em;
+             font-weight: 700; word-spacing: .67em; white-space: nowrap; box-shadow: 0 1px 3px #0003; }
+.mock-table { width: 56%; margin: 7% auto 0; padding: .67em .9em; border-radius: .67em;
               background: var(--canvas-glass, #fff6); backdrop-filter: blur(6px); border: 1px solid var(--kiso-soft); }
-.mock-row { display: flex; justify-content: space-between; padding: 2px 0; }
+.mock-row { display: flex; justify-content: space-between; padding: .22em 0; }
 .mock-row b { font-weight: 600; }
 .mock-row span:last-child { color: #3a9a4b; }
 .mock-card { text-align: center; margin-top: 12%; }
-.mock-card .q { font-size: 20px; }
-.mock-card hr { margin: 6px auto; width: 50%; border: 0; border-top: 1px solid currentColor; opacity: .4; }
-.mock-buttons { position: absolute; bottom: 6px; inset-inline: 0; display: flex; justify-content: center; gap: 5px; }
-.mock-buttons span { background: var(--canvas-elevated, #fff); padding: 2px 8px; border-radius: 5px; box-shadow: 0 1px 2px #0003; }
+.mock-card .q { font-size: 2.2em; }
+.mock-card hr { margin: .67em auto; width: 50%; border: 0; border-top: 1px solid currentColor; opacity: .4; }
+.mock-buttons { position: absolute; bottom: .67em; inset-inline: 0; display: flex; justify-content: center; gap: .55em; }
+.mock-buttons span { background: var(--canvas-elevated, #fff); padding: .22em .9em; border-radius: .55em; box-shadow: 0 1px 2px #0003; }
 .mock-empty[hidden] { display: none; }
-.mock-empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--kiso-muted); font-size: 12.5px; }
+.mock-empty { position: absolute; z-index: 1; inset: 0; display: grid; place-items: center; color: var(--kiso-muted); font-size: 12.5px;
+              background: color-mix(in srgb, var(--kiso-canvas) 82%, transparent); }
+
+/* Screens: one card each, a small preview beside its controls; narrower, the preview shrinks,
+   then sits above them. */
+.screen-card { container-type: inline-size; }
+.screen-body { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 4px 20px; align-items: start; }
+.screen-controls > .field:first-child, .screen-controls > .check:first-child { margin-top: 0; }
+.screen-controls .field { grid-template-columns: 96px minmax(0, 1fr); }
+.screen-controls select.shuffle { justify-self: start; width: auto; }
+@container (max-width: 600px) { .screen-body { grid-template-columns: 176px minmax(0, 1fr); gap: 4px 14px; } }
+@container (max-width: 440px) { .screen-body { grid-template-columns: minmax(0, 1fr); } .screen-body .mock { max-width: 300px; } }
+/* Under its checkbox: indented, and dimmed while the checkbox is off. */
+fieldset.dependent { min-width: 0; margin: 6px 0 0 7px; padding: 0 0 0 18px; border: 0; border-left: 2px solid var(--kiso-soft); }
+fieldset.dependent > .choices:first-child { margin-top: 0; }
+fieldset.dependent:disabled { opacity: 0.5; }
+fieldset.dependent:disabled * { cursor: default; }
 
 /* Scene chips on the Screens page */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -32,14 +70,20 @@
 /* Scenes page */
 .scenes { display: grid; grid-template-columns: 184px minmax(0, 1fr); gap: 16px; align-items: start; }
 .scene-list { display: flex; flex-direction: column; gap: 4px; }
-#main .scene-item { display: grid; grid-template-columns: 54px minmax(0, 1fr); width: 100%; box-sizing: border-box; gap: 2px 10px; align-items: center; text-align: left;
+#main .scene-item { display: grid; grid-template-columns: 54px minmax(0, 1fr); width: 100%; min-width: 0; margin: 0; box-sizing: border-box; gap: 2px 10px; align-items: center; text-align: left;
                     padding: 6px; border-color: transparent; background: none; }
 #main .scene-item[aria-current="true"] { background: var(--kiso-card); border-color: var(--kiso-border); }
 .scene-item .thumb { grid-row: span 2; width: 54px; height: 36px; border-radius: 4px; background: var(--kiso-soft) center / cover; }
 .scene-item small { color: var(--kiso-muted); }
 .scene-item .item-name, .scene-item small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.list-actions { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+/* The list column stays put while the editor scrolls: only the list itself scrolls, when long. */
+.scene-side { position: sticky; top: 0; display: flex; flex-direction: column; gap: 12px;
+              max-height: calc(100vh - 52px - 36px); }
+.scene-side .scene-list { min-height: 0; overflow: hidden auto; }
+.list-actions { display: flex; flex-direction: column; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--kiso-soft); }
+.group-label { font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--kiso-muted); }
 #main .list-actions button { text-align: left; }
+#main .library-link { align-self: flex-start; margin-top: auto; padding-left: 6px; }
 .editor-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 10px; }
 .name { font-size: 16px; font-weight: 600; flex: 1 1 220px; }
 .editor-head .kind { color: var(--kiso-muted); white-space: nowrap; }
@@ -47,7 +91,7 @@
 #main #deleteScene:hover { border-color: var(--kiso-danger); }
 /* The preview has the shape of Anki's main window (--kk-window, its width / height), so it
    crops each picture just as the window does; it grows up to about half the dialog's height. */
-.preview { position: relative; aspect-ratio: var(--kk-window, 1.6); width: min(100%, calc(min(46vh, 520px) * var(--kk-window, 1.6)));
+.preview { position: relative; aspect-ratio: var(--kk-window, 1.6); width: min(100%, calc(min(34vh, 380px) * var(--kk-window, 1.6)));
            margin-inline: auto; border-radius: 6px; overflow: hidden; background: var(--kiso-soft); }
 /* The picture sits under the readout and the play button (its stage is added after them). */
 .preview .keshiki-stage { z-index: 0; }
@@ -68,6 +112,16 @@
 .ribbon input[type=range] { z-index: 101; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; }
 .ribbon .hand { position: absolute; z-index: 100; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: #fff;
                 box-shadow: 0 0 0 1px #0008; pointer-events: none; }
+/* A grip on the hand says it can be dragged. */
+.ribbon .hand::after { content: ""; position: absolute; left: 50%; top: 50%; width: 9px; height: 18px; transform: translate(-50%, -50%);
+                       border-radius: 4px; background: #fff; box-shadow: 0 0 0 1px #0008, 0 1px 3px #0006; }
+/* The pointer's place along the timeline, with its time. */
+.ribbon .ghost { position: absolute; z-index: 99; top: 0; bottom: 0; width: 0; border-left: 1px dashed #fffc; pointer-events: none; }
+.ribbon .ghost[hidden] { display: none; }
+.ribbon .ghost span { position: absolute; top: 50%; left: 6px; transform: translateY(-50%); padding: 1px 6px; border-radius: 999px;
+                      background: #000b; color: #fff; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ribbon .ghost.flip span { left: auto; right: 6px; }
+.ribbon input[type=range] { cursor: pointer; }
 .ribbon:focus-within { outline: 2px solid var(--kiso-link); outline-offset: 2px; }
 .ticks { position: relative; height: 18px; font-size: 11px; color: var(--kiso-muted); }
 .ticks span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
@@ -75,14 +129,27 @@
 .ticks span:first-child { transform: none; }
 .ticks span:last-child { transform: translateX(-100%); }
 
-/* Starts is as wide as its dropdown: a set time's clock wraps beneath it instead of widening every row. */
-.versions { display: grid; grid-template-columns: 64px minmax(80px, 1fr) fit-content(220px) auto 28px; gap: 4px 10px;
+/* Versions: each row is a subgrid of the table, so the columns line up down the table while
+   each row places its own cells. Line one: picture, name, when the transition starts and
+   ends, remove. A version that follows the one above (or starts at a set time) has its start
+   across both columns, then its wait (or time) beside its length, then today's times. */
+.versions { display: grid; grid-template-columns: 64px minmax(72px, 1fr) fit-content(240px) fit-content(220px) 26px; gap: 4px 8px;
             align-items: center; margin-top: 12px; }
-.versions .unit { flex-wrap: wrap; }
 .versions.single { grid-template-columns: 64px minmax(0, 1fr) auto; }
-.vhead, .version { display: contents; }
+.vhead, .version { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; row-gap: 4px; }
+.version { padding: 2px 0; }
+.version > .pick { grid-area: 1 / 1; align-self: start; }
+.version > input.label { grid-area: 1 / 2; }
+.version > .c-start, .vhead > .c-start { grid-area: 1 / 3; }
+.version > .c-start.wide { grid-area: 1 / 3 / auto / 5; }
+.version > .c-end, .vhead > .c-end { grid-area: 1 / 4; }
+.vhead > .c-name { grid-area: 1 / 2; }
+.version > .c-remove { grid-area: 1 / 5; }
+.version > .c-wait { grid-area: 2 / 3; }
+.version > .c-fade { grid-area: 2 / 4; }
+.version > .c-range { grid-area: 3 / 3 / auto / 5; min-height: 1.4em; color: var(--kiso-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .vhead span { font-size: 12px; color: var(--kiso-muted); padding-bottom: 2px; }
-/* A row is display: contents, so its "showing" mark goes on the cells. */
+/* The row showing in the preview: its picture and name are marked. */
 #main .version.showing > .pick { box-shadow: 0 0 0 2px var(--kiso-canvas), 0 0 0 4px var(--kiso-accent); }
 .version.showing > input.label { border-color: var(--kiso-accent); }
 #main .pick { width: 64px; height: 40px; padding: 0; border-radius: 5px; background: var(--kiso-soft) center / cover;
@@ -90,7 +157,7 @@
 #main .pick.empty { border-style: dashed; }
 .version input.label { font-weight: 600; width: 100%; }
 .version .unit input[type=number] { width: 60px; }
-.version select { width: auto; max-width: 210px; }
+.version select { width: 100%; min-width: 0; }
 .version .unit input[type=time] { width: 112px; }
 .versions .file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #main .add-version { grid-column: 2 / span 2; justify-self: start; margin-top: 4px; }
@@ -127,6 +194,7 @@
                             min-width: 0; min-height: 0; padding: 0; display: grid; place-items: center; line-height: 0;
                             border-radius: 50%; background: #000b; color: #fff; opacity: 0.8; transition: opacity 0.15s; }
 #main .album-tile .remove svg { width: 12px; height: 12px; }
+#main .album-tile .remove.hide svg { width: 13px; height: 13px; stroke-width: 2; }
 #main .album-tile .remove:hover, #main .album-tile .remove:focus-visible { opacity: 1; background: #000; }
 #main .album-add { padding: 4px 8px; font-size: 12px; line-height: 1.25; white-space: normal; border-style: dashed; }
 /* Combining single pictures: a ticked list with each picture's thumbnail. */
@@ -158,9 +226,9 @@
 #modal .lib-action { position: absolute; right: 6px; top: 6px; padding: 2px 8px; font-size: 12px; opacity: 0.85; transition: opacity 0.15s; }
 .lib-tile:hover .lib-action, .lib-tile .lib-action:focus-visible { opacity: 1; }
 .library-dialog .dialog-foot .foot-note { margin-right: auto; }
-/* A linked album's hidden pictures: small, each with Show. */
-.hidden-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
-.hidden-row .label { color: var(--kiso-muted); margin-right: 4px; }
+/* A linked album's hidden pictures, folded away: small, each with Show. */
+.album-wrap details.disclosure { margin-top: 14px; }
+.hidden-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
 .hidden-tile { position: relative; width: 72px; aspect-ratio: 16 / 10; border-radius: 5px; overflow: hidden; opacity: 0.6; }
 .hidden-tile:hover { opacity: 1; }
 #main .hidden-tile .show { position: absolute; inset: auto 4px 4px auto; padding: 1px 6px; font-size: 11px; }
@@ -168,32 +236,31 @@
 .image-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* A narrow editor (its own width, not the window's: the scene list may sit beside it or
-   above it): each version takes two lines, its name above when it starts and when it's
-   fully in, so the dropdowns keep their width. */
+   above it): the name and remove on line one, starts and ends on line two, so the dropdowns
+   keep their width; the picture beside both. */
 .editor { container-type: inline-size; }
 @container (max-width: 600px) {   /* one line needs about 600px: picture, name, two dropdowns, remove */
-  /* Line one: the name and its remove button; line two: starts and fully in. Dense placement
-     puts each remove button back up on its name's line; the heading row is kept free of gaps
-     so nothing lands there. */
-  .versions:not(.single) { grid-template-columns: 64px minmax(0, 1.2fr) minmax(0, 1fr) 28px; grid-auto-flow: row dense; }
-  .versions:not(.single) .vhead span:nth-child(2) { display: none; }
-  .versions:not(.single) .vhead span:nth-child(1) { grid-column: 1; }
-  .versions:not(.single) .vhead span:nth-child(3) { grid-column: 2; }
-  .versions:not(.single) .vhead span:nth-child(4) { grid-column: 3; }
-  .versions:not(.single) .vhead span:nth-child(5) { grid-column: 4; }
-  .versions:not(.single) .version > .pick { grid-column: 1; grid-row: span 2; align-self: center; }
-  .versions:not(.single) .version > input.label { grid-column: 2 / 4; }
-  .versions:not(.single) .version > :nth-child(3) { grid-column: 2; }
-  .versions:not(.single) .version > :nth-child(4) { grid-column: 3 / 5; }
-  .versions:not(.single) .version > :nth-child(5) { grid-column: 4; }
-  .versions:not(.single) .version select { width: 100%; max-width: none; }
-  .versions:not(.single) .version > .unit > select { flex: 1 1 100%; }
+  .versions:not(.single) { grid-template-columns: 64px minmax(0, 1.2fr) minmax(0, 1fr) 28px; }
+  .vhead > .c-name { display: none; }
+  .vhead > .c-start { grid-area: 1 / 2; }
+  .vhead > .c-end { grid-area: 1 / 3; }
+  .version > .pick { grid-area: 1 / 1 / span 2; align-self: center; }
+  .version.detailed > .pick { align-self: start; }
+  .version > input.label { grid-area: 1 / 2 / auto / 4; }
+  .version > .c-remove { grid-area: 1 / 4; }
+  .version > .c-start { grid-area: 2 / 2; }
+  .version > .c-start.wide { grid-area: 2 / 2 / auto / 5; }
+  .version > .c-end { grid-area: 2 / 3 / auto / 5; }
+  .version > .c-wait { grid-area: 3 / 2; }
+  .version > .c-fade { grid-area: 3 / 3 / auto / 5; }
+  .version > .c-range { grid-area: 4 / 2 / auto / 5; }
 }
 
 /* A narrow window: the scene list becomes a strip above the editor, which gets the full width. */
 @media (max-width: 920px) {
   .scenes { grid-template-columns: minmax(0, 1fr); }
-  .list-actions { flex-direction: row; flex-wrap: wrap; }
-  .scene-list { flex-direction: row; overflow-x: auto; padding-bottom: 4px; }
+  .scene-side { position: static; max-height: none; }
+  .list-actions { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .scene-side .scene-list { flex-direction: row; overflow: auto hidden; padding-bottom: 4px; }
   #main .scene-item { flex: none; width: 210px; }
 }

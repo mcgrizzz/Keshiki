@@ -17,12 +17,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 from aqt import gui_hooks
-from aqt.qt import QEvent, QObject, QPoint, QTimer
+from aqt.qt import QEvent, QObject, QPoint
 from aqt.webview import AnkiWebView, WebContent
 
 from . import library
 from ._kiso import config as kiso_config
-from ._kiso.hooks import Subscriptions, guard
+from ._kiso.hooks import Subscriptions
 from .config import ADDON_PACKAGE, migrate
 from .schedule import build_look
 from .sun import location_sun
@@ -52,9 +52,9 @@ class Renderer(QObject):
         self.shown: Optional[dict] = None     # the look on screen now
         self._progress: Optional[float] = None
         self._all_done: Optional[bool] = None
-        self._geometry_queued = False
         self.enabled = True   # False once turned off in Tools > Add-ons, until Anki restarts
         self.subs = Subscriptions(log)
+        self._geometry = self.subs.debounce(self, self.push_geometry, "Background geometry")
         self._web_assets = (WEB / "layers.css").read_text(encoding="utf-8"), \
             (WEB / "layers.js").read_text(encoding="utf-8")
 
@@ -84,9 +84,8 @@ class Renderer(QObject):
         return [self.mw.toolbarWeb, self.mw.web, self.mw.bottomWeb]
 
     def eventFilter(self, obj, event) -> bool:
-        if event.type() in (QEvent.Type.Resize, QEvent.Type.Move) and not self._geometry_queued:
-            self._geometry_queued = True
-            QTimer.singleShot(0, guard(self.push_geometry, log, "Background geometry"))
+        if event.type() in (QEvent.Type.Resize, QEvent.Type.Move) and not self._geometry.pending:
+            self._geometry.restart(0)   # once per event-loop turn, however many events
         return False
 
     # -- config -----------------------------------------------------------
@@ -191,7 +190,6 @@ class Renderer(QObject):
         return {"w": central.width() / zoom, "h": central.height() / zoom, "x": pos.x() / zoom, "y": pos.y() / zoom}
 
     def push_geometry(self) -> None:
-        self._geometry_queued = False
         for web in self._webviews():
             web.eval(f"window.keshiki && keshiki.main && keshiki.main.geom({json.dumps(self.geometry(web))})")
 

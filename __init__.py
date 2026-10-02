@@ -37,9 +37,8 @@ if mw is not None:
 
     def _redraw(_a):
         # Pages carry the old layer code; redraw them.
-        mw.toolbar.draw()
-        if mw.state in ("deckBrowser", "overview", "review"):
-            mw.moveToState(mw.state)
+        from .keshiki._kiso.ui import rebuild_main_window
+        rebuild_main_window(mw)
 
     # Add-ons load after the main window's webviews exist and before the first
     # page renders, so the first deck list already has its background.

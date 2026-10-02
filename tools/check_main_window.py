@@ -108,13 +108,16 @@ def check(app, shots, base):
     cfg["scenes"].append(prog)
     cfg["screens"]["study"].update(same_as_main=False, scenes=[prog["id"]])
     renderer.set_config(cfg)
-    srcs = lambda: [s for s, _ in (stage_state(app, mw.web) or {}).get("layers", [])]  # noqa: E731
-    until(app, lambda: srcs() and srcs()[-1].endswith(a), 5, "progress scene didn't start on its first image")
+    def showing(image):
+        # One read: the page can reload between two.
+        layers = (stage_state(app, mw.web) or {}).get("layers", [])
+        return bool(layers) and layers[-1][0].endswith(image)
+    until(app, lambda: showing(a), 5, "progress scene didn't start on its first image")
     mw.reviewer._showAnswer()
     until(app, lambda: mw.reviewer.state == "answer")
     mw.reviewer._answerCard(4)   # Easy: graduates, so the deck is done
     until(app, lambda: mw.state == "overview", 10, "deck didn't finish")
-    until(app, lambda: srcs() and srcs()[-1].endswith(b),
+    until(app, lambda: showing(b),
           10, "congratulations screen didn't get the finished image")
     pump(app, 2.5)
     if shots:
@@ -127,7 +130,7 @@ def check(app, shots, base):
     cfg["screens"]["done"].update(enabled=True, scenes=[done["id"]])
     renderer.set_config(cfg)
     mw.moveToState("deckBrowser")
-    until(app, lambda: srcs() and srcs()[-1].endswith(b), 10, "the all-done scene didn't show on the deck list")
+    until(app, lambda: showing(b), 10, "the all-done scene didn't show on the deck list")
     print("PASS: once everything is studied, the all-done scene shows on the deck list.")
     mw.moveToState("overview")
     until(app, lambda: mw.state == "overview", 5)

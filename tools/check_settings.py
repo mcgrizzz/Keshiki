@@ -419,6 +419,7 @@ def check(app, shots, base):
     run_js(dlg, "$('#albumSubfolders').click()")
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 3, 5, "subfolders stayed in")
     # Hiding a picture leaves it in the folder and out of the album, through rescans; Show brings it back.
+    assert float(run_js(dlg, "getComputedStyle($('.album-tile .remove')).opacity")) >= 0.8, "the Hide × only shows on hover"
     run_js(dlg, "$$('.album-tile .remove')[0].click()")
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 2, 5, "Hide didn't take it out")
     assert run_js(dlg, f"{album}.folder.hidden") == [f"@{link}/dunes.png"] and (wall / "dunes.png").is_file()
@@ -475,6 +476,7 @@ def check(app, shots, base):
     run_js(dlg, "$('#openLibrary').click()")
     until(app, lambda: run_js(dlg, "!!$('.library-dialog')"), 5, "no picture library")
     unused = run_js(dlg, "$$('.lib-tile').filter(t => t.querySelector('.lib-action')).map(t => t.title)")
+    assert float(run_js(dlg, "getComputedStyle($('.lib-action')).opacity")) >= 0.8, "Move to trash only shows on hover"
     assert {"spare1.png", "spare2.png"} <= set(unused) and "dawn.png" not in unused, unused
     shoot(dlg, "library")
     run_js(dlg, "$('#trashUnused').click()")

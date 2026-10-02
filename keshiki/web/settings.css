@@ -122,9 +122,10 @@
 .album-tile { position: relative; }
 #main .album-tile .pick, #main .album-add { box-sizing: border-box; width: 96px; height: 60px; }
 #main .album-tile.shown .pick { box-shadow: 0 0 0 2px var(--kiso-canvas), 0 0 0 4px var(--kiso-accent); }
-#main .album-tile .remove { position: absolute; top: 2px; right: 2px; padding: 2px; border-radius: 999px;
-                            background: #000a; color: #fff; opacity: 0; transition: opacity 0.15s; }
-.album-tile:hover .remove, .album-tile .remove:focus-visible { opacity: 1; }
+/* Always shown (a hover-only control is easy to miss), fully on hover. */
+#main .album-tile .remove { position: absolute; top: 3px; right: 3px; padding: 2px; border-radius: 999px;
+                            background: #000b; color: #fff; opacity: 0.8; transition: opacity 0.15s; }
+#main .album-tile .remove:hover, #main .album-tile .remove:focus-visible { opacity: 1; background: #000; }
 #main .album-add { padding: 4px 8px; font-size: 12px; line-height: 1.25; white-space: normal; border-style: dashed; }
 /* Combining single pictures: a ticked list with each picture's thumbnail. */
 .combine-dialog .combine-list { display: flex; flex-direction: column; gap: 2px; max-height: 40vh; overflow-y: auto; }
@@ -152,7 +153,7 @@
 .lib-badge { position: absolute; left: 6px; bottom: 6px; padding: 1px 7px; border-radius: 999px; font-size: 11px;
              background: var(--kiso-accent); color: var(--kiso-accent-fg); }
 .lib-badge.quiet { background: #000a; color: #fff; }
-#modal .lib-action { position: absolute; right: 6px; top: 6px; padding: 2px 8px; font-size: 12px; opacity: 0; transition: opacity 0.15s; }
+#modal .lib-action { position: absolute; right: 6px; top: 6px; padding: 2px 8px; font-size: 12px; opacity: 0.85; transition: opacity 0.15s; }
 .lib-tile:hover .lib-action, .lib-tile .lib-action:focus-visible { opacity: 1; }
 .library-dialog .dialog-foot .foot-note { margin-right: auto; }
 /* A linked album's hidden pictures: small, each with Show. */
@@ -160,8 +161,7 @@
 .hidden-row .label { color: var(--kiso-muted); margin-right: 4px; }
 .hidden-tile { position: relative; width: 72px; aspect-ratio: 16 / 10; border-radius: 5px; overflow: hidden; opacity: 0.6; }
 .hidden-tile:hover { opacity: 1; }
-#main .hidden-tile .show { position: absolute; inset: auto 4px 4px auto; padding: 1px 6px; font-size: 11px; opacity: 0; transition: opacity 0.15s; }
-.hidden-tile:hover .show, .hidden-tile .show:focus-visible { opacity: 1; }
+#main .hidden-tile .show { position: absolute; inset: auto 4px 4px auto; padding: 1px 6px; font-size: 11px; }
 .image-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .image-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

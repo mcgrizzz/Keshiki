@@ -47,7 +47,7 @@ kiso sync --watch                        # copy into your Anki's addons21/keshik
 ```
 
 - GitHub Actions runs the same on every push (Kiso's add-on workflows: tests on Anki 26.08 and the newest, the real-Anki checks, the build). A tag `v<version>` makes a draft release with the `.ankiaddon` and its `.sha256`.
-- After the first sync and a restart, a running Anki reloads Keshiki on every sync, with no restart. The synced copy is listed as "🖼️ Keshiki (dev)". Changes to the root `__init__.py` still need a restart.
+- After the first sync and a restart, a running Anki reloads Keshiki on every sync, with no restart. The synced copy is listed as "Keshiki (dev)". Changes to the root `__init__.py` still need a restart.
 - To reload by hand, open Anki's debug console (Ctrl+Shift+;) and run `import keshiki; keshiki.reload_addon()`.
 - Keshiki logs to Anki's `logs/addons/keshiki/` folder, which Tools → Add-ons → View Files opens one level up.
 - `tools/qt_checks.sh` fails on any deprecation notice Anki prints. Set `KISO_STRICT_ANKI_NOTICES=1` to make `pytest` do the same; without it, notices are listed at the end of the run. On Linux the real-Anki checks need Qt's usual system libraries.

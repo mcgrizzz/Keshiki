@@ -241,5 +241,5 @@ def make_dialog(mw, renderer):
             renderer.scene_look = None
             renderer.set_preview(None)
 
-    return kiso_settings.make_dialog(mw, title="🖼️ Keshiki", html=page_html(), bridge=bridge,
+    return kiso_settings.make_dialog(mw, title="Keshiki", html=page_html(), bridge=bridge,
                                      geom_key=_GEOM_KEY, on_finished=finished)

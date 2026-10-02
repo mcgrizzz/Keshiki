@@ -13,7 +13,7 @@ dev = ["pytest", "ruff", "anki>=26.8", "kiso-anki"]
 [tool.kiso]
 package = "keshiki"
 root_files = ["__init__.py", "manifest.json", "config.json", "config.md"]
-dev_name = "🖼️ Keshiki (dev)"
+dev_name = "Keshiki (dev)"
 kiso = "0.1"
 
 [tool.pytest.ini_options]

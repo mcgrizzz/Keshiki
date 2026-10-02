@@ -123,8 +123,10 @@
 #main .album-tile .pick, #main .album-add { box-sizing: border-box; width: 96px; height: 60px; }
 #main .album-tile.shown .pick { box-shadow: 0 0 0 2px var(--kiso-canvas), 0 0 0 4px var(--kiso-accent); }
 /* Always shown (a hover-only control is easy to miss), fully on hover. */
-#main .album-tile .remove { position: absolute; top: 3px; right: 3px; padding: 2px; border-radius: 999px;
-                            background: #000b; color: #fff; opacity: 0.8; transition: opacity 0.15s; }
+#main .album-tile .remove { position: absolute; top: 5px; right: 5px; box-sizing: border-box; width: 20px; height: 20px;
+                            min-width: 0; min-height: 0; padding: 0; display: grid; place-items: center; line-height: 0;
+                            border-radius: 50%; background: #000b; color: #fff; opacity: 0.8; transition: opacity 0.15s; }
+#main .album-tile .remove svg { width: 12px; height: 12px; }
 #main .album-tile .remove:hover, #main .album-tile .remove:focus-visible { opacity: 1; background: #000; }
 #main .album-add { padding: 4px 8px; font-size: 12px; line-height: 1.25; white-space: normal; border-style: dashed; }
 /* Combining single pictures: a ticked list with each picture's thumbnail. */

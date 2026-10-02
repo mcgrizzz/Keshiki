@@ -162,9 +162,22 @@ def check(app, shots, base):
     overflow = run_js(dlg, "Math.max(...$$('.versions *').map(e => e.getBoundingClientRect().right))"
                            " - $('.versions').getBoundingClientRect().right")
     assert overflow <= 0, f"versions table overflows by {overflow}px with a set time"
+    # Editing the time keeps the box's focus and the page's scroll position.
+    run_js(dlg, "const m = $('main'); m.scrollTop = m.scrollHeight; window._top = m.scrollTop")
+    assert run_js(dlg, "window._top") > 0, "the page doesn't scroll in this window"
+    run_js(dlg, "const t = $('.version input[type=time]'); t.focus(); setv(t, '22:15')")
+    pump(app, 0.4)
+    assert run_js(dlg, "document.activeElement === $('.version input[type=time]')"), "the time box lost its focus"
+    assert run_js(dlg, "$('main').scrollTop") == run_js(dlg, "window._top"), "editing the time scrolled the page"
+    assert run_js(dlg, "draft.scenes.find(s => s.kind === 'day').versions[4].offset") == 22 * 60 + 15
+    # A change that rebuilds the page keeps its place too.
+    run_js(dlg, "const f = $$('.version')[0].querySelectorAll('select')[1]; setv(f, f.options[1].value)")
+    pump(app, 0.4)
+    assert run_js(dlg, "$('main').scrollTop") == run_js(dlg, "window._top"), "a rebuild scrolled the page"
+    run_js(dlg, "$('main').scrollTop = 0")
     run_js(dlg, "$$('.version')[4].querySelector('[aria-label=\"Remove version\"]').click()")
     until(app, lambda: run_js(dlg, "$$('.version').length") == 4, 5)
-    print("PASS: a version at a set time keeps the versions table inside the panel.")
+    print("PASS: a version at a set time fits the panel, and editing its time keeps focus and scroll.")
 
     # Delete scene asks first, with focus on the safe answer; No keeps the scene.
     count = run_js(dlg, "draft.scenes.length")
@@ -198,6 +211,10 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "!!$('#alignPictures') && !$('.align').hidden"), 5, "no line-up option in the picker")
     assert run_js(dlg, "$('#alignPictures').checked"), "untouched pictures aren't shown as lined up"
     assert run_js(dlg, "$$('.mini').length") == 3
+    # Selecting another version's picture still shows every other version.
+    run_js(dlg, "$$('.tile').find(t => t.title === 'dawn.png').click()")
+    assert run_js(dlg, "$$('.mini-label').map(l => l.textContent)") == ["Dawn", "Dusk", "Night"]
+    run_js(dlg, "$$('.tile').find(t => t.title === 'day.png').click()")
     run_js(dlg, drag % "0.02")
     assert run_js(dlg, ys) == [0, 0, 0, 0], run_js(dlg, ys)
     until(app, lambda: run_js(dlg, "$$('.mini .crop-frame').every(f => f.style.top === '0%')"), 5,

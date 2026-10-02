@@ -358,11 +358,16 @@ function versionRow(scene, v, i, preview) {
         !clock && moments.length > 0 && !isMoment(direction, from) && customOption(direction, from),
         h("option", { value: "clock", selected: clock }, "At a set time")),
       clock && h("input", { type: "time", value: hhmm(v.offset), "aria-label": "Starts at",
-                            onchange: (e) => { const [hh, mm] = e.target.value.split(":").map(Number); v.offset = hh * 60 + mm; changed(true); } }));
+                            onchange: (e) => {
+                              if (!e.target.value) return;   // mid-edit, the box can be empty for a moment
+                              const [hh, mm] = e.target.value.split(":").map(Number);
+                              v.offset = hh * 60 + mm;
+                              changed();   // no rebuild: the box keeps its focus; the timeline redraws on its own
+                            } }));
     fade = clock
       ? h("span", { className: "unit" },
           h("input", { type: "number", min: 0, max: 720, value: v.fade, "aria-label": "Minutes until fully in",
-                       onchange: (e) => { v.fade = Number(e.target.value) || 0; changed(true); } }), "min later",
+                       onchange: (e) => { v.fade = Number(e.target.value) || 0; changed(); } }), "min later",
           h("small", { className: "when-time" }))
       : h("select", { "aria-label": "Fully in at", onchange: (e) => { v.to = Number(e.target.value.split(":")[1]); changed(true); } },
           half(direction).filter(after).map((m) => momentOption(m, direction, m.degrees === to)),
@@ -560,12 +565,12 @@ function pickImage(current, use, scene = null, index = -1) {
   const CENTRE = { x: 50, y: 50 };
   const where = (name) => draft.images[name] || CENTRE;
   const same = (a, b) => a.x === b.x && a.y === b.y;
-  // The other versions' pictures: what moves with the chosen one.
-  const others = () => [...new Set((scene ? scene.versions : []).filter((_, j) => j !== index)
-    .map((v) => v.image).filter((name) => name && name !== chosen))];
-  const labelOf = (name) => (scene.versions.find((v) => v.image === name) || {}).label || name;
+  // The scene's other versions, one each whatever is selected (two can share a picture),
+  // and the pictures that move with the chosen one.
+  const otherVersions = scene ? scene.versions.filter((v, j) => j !== index && v.image) : [];
+  const others = () => [...new Set(otherVersions.map((v) => v.image))].filter((name) => name !== chosen);
   // Ticked only when it's true: the pictures already share one position.
-  let linked = !!scene && scene.aligned !== false && others().length > 0
+  let linked = !!scene && scene.aligned !== false && otherVersions.length > 0
     && others().every((name) => same(where(name), where(current || others()[0])));
   // Lined up, every picture shows the scene's position; otherwise each its own.
   const focus = (name = chosen) => (linked && others().length ? where(others()[0]) : where(name));
@@ -591,13 +596,13 @@ function pickImage(current, use, scene = null, index = -1) {
     const fit = () => fitOf(img);
 
     // The scene's other pictures, small, each with its frame: they follow the drag while lined up.
-    const minis = others().map((name) => {
-      const mimg = h("img", { src: thumbUrl(name), alt: "", draggable: false });
+    const minis = otherVersions.map((v) => {
+      const mimg = h("img", { src: thumbUrl(v.image), alt: "", draggable: false });
       const mframe = h("span", { className: "crop-frame" });
       mimg.addEventListener("load", () => place());
-      return { name, img: mimg, frame: mframe,
-               el: h("div", { className: "mini-item", title: name },
-                 h("div", { className: "mini" }, mimg, mframe), h("span", { className: "mini-label" }, labelOf(name))) };
+      return { name: v.image, img: mimg, frame: mframe,
+               el: h("div", { className: "mini-item", title: v.image },
+                 h("div", { className: "mini" }, mimg, mframe), h("span", { className: "mini-label" }, v.label || v.image)) };
     });
     const shapeNote = h("p", { className: "help shape-note", hidden: true },
       "These pictures have different shapes, so they line up only roughly.");

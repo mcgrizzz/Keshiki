@@ -45,7 +45,10 @@
 .editor-head .kind { color: var(--kiso-muted); white-space: nowrap; }
 #main #deleteScene { display: inline-flex; align-items: center; gap: 6px; color: var(--kiso-danger); }
 #main #deleteScene:hover { border-color: var(--kiso-danger); }
-.preview { position: relative; aspect-ratio: 16 / 9; max-height: 250px; width: 100%; border-radius: 6px; overflow: hidden; background: var(--kiso-soft); }
+/* The preview has the shape of Anki's main window (--kk-window, its width / height), so it
+   crops each picture just as the window does; it grows up to about half the dialog's height. */
+.preview { position: relative; aspect-ratio: var(--kk-window, 1.6); width: min(100%, calc(min(46vh, 520px) * var(--kk-window, 1.6)));
+           margin-inline: auto; border-radius: 6px; overflow: hidden; background: var(--kiso-soft); }
 /* The picture sits under the readout and the play button (its stage is added after them). */
 .preview .keshiki-stage { z-index: 0; }
 .preview .readout { z-index: 1; }

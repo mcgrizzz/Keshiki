@@ -234,6 +234,18 @@ def check(app, shots, base):
     assert run_js(dlg, row)["overflow"] <= 0
     print("PASS: in a narrow window each version takes two lines, and its dropdowns keep their width.")
 
+    # The preview keeps the shape of Anki's main window however wide the dialog is.
+    shape = """(() => { const r = $('.preview').getBoundingClientRect();
+        return { ratio: (r.width / r.height) / (S.window[0] / S.window[1]), share: r.height / innerHeight }; })()"""
+    for width, height in ((1100, 780), (1800, 1000)):
+        dlg.resize(width, height)
+        pump(app, 0.6)
+        got = run_js(dlg, shape)
+        assert abs(got["ratio"] - 1) < 0.02 and got["share"] < 0.5, (width, got)
+    dlg.resize(1100, 780)
+    pump(app, 0.4)
+    print("PASS: the scene preview has the main window's shape at any dialog size.")
+
     # Delete scene asks first, with focus on the safe answer; No keeps the scene.
     count = run_js(dlg, "draft.scenes.length")
     run_js(dlg, "$('#deleteScene').click()")

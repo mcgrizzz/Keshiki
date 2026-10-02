@@ -883,6 +883,7 @@ Kiso.setup({
   onLoad: (state) => {
     S.anchors = { sunrise: 390, sunset: 1170 };
     S.window = S.window || [16, 10];
+    document.documentElement.style.setProperty("--kk-window", String(S.window[0] / S.window[1]));
     images = state.images;
   },
   // Unsaved edits preview live in the main window (and in the page's own previews).

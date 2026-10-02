@@ -24,6 +24,22 @@
     return el;
   }
 
+  // Resolves when an opacity transition on el ends (or soon after it should have).
+  function faded(el, ms) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(done, ms + 100);
+      function done() {
+        clearTimeout(timer);
+        el.removeEventListener("transitionend", onEnd);
+        resolve();
+      }
+      function onEnd(e) {
+        if (e.target === el && e.propertyName === "opacity") done();
+      }
+      el.addEventListener("transitionend", onEnd);
+    });
+  }
+
   function loaded(src) {
     return new Promise((resolve) => {
       const img = new Image();
@@ -63,6 +79,9 @@
       const key = JSON.stringify(look || null);
       if (key === this.shown) return;
       this.shown = key;
+      // Each look is a step; work a step defers (dropping covered layers) is skipped
+      // once a newer one has taken over the stack, which may have kept those layers.
+      const step = (this.step = (this.step || 0) + 1);
       // A small step (the same pictures, every value moving under 3%) gets a short ease
       // instead of the full one: smooth to the eye, and the filtered pictures are redrawn
       // for well under a second instead of the whole crossfade.
@@ -85,23 +104,41 @@
       this.stack.style.inset = -2 * blur + "px";
 
       const live = [...this.stack.children].filter((el) => !el.dataset.leaving);
-      if (live.length && live[0].dataset.src === want[0].src) {
-        // Same base image (a day scene moving along): adjust in place.
-        this.set(live[0], want[0]);
-        const top = want[1], liveTop = live[1];
-        if (top && liveTop && liveTop.dataset.src === top.src) this.set(liveTop, top);
-        else {
-          if (liveTop) this.leave(liveTop, ms);
-          if (top) this.enter(top, ms);
+      // Carry on with the newest layer already showing the base picture, wherever it is
+      // in the stack (just after a change, the old picture is still underneath it).
+      const at = live.map((el) => el.dataset.src).lastIndexOf(want[0].src);
+      if (at >= 0) {
+        const base = live[at];
+        const was = base.target;
+        this.set(base, want[0]);
+        // A top layer becoming the base is painted once it has faded the rest of the way in.
+        if (!base.loading && was < want[0].opacity) base.ready = base.ready.then(() => faded(base, ms));
+        // What's under it goes once it's painted: the base is opaque, so nothing shows through.
+        for (const el of live.slice(0, at)) {
+          el.dataset.leaving = "1";
+          base.ready.then(() => this.leave(el, ms, true));
         }
-        for (const el of live.slice(2)) this.leave(el, ms);
+        const above = live.slice(at + 1);
+        const top = want[1];
+        const liveTop = top && above.find((el) => el.dataset.src === top.src);
+        if (liveTop) this.set(liveTop, top);
+        else if (top) this.enter(top, ms);
+        for (const el of above) if (el !== liveTop) this.leaveOver(base, el, ms);
         return;
       }
-      // A different picture: lay it over the old one, then drop the old one.
+      // A different picture: lay it over the old one, then drop the old one once it's covered.
       const entering = want.map((layer) => this.enter(layer, ms));
       Promise.all(entering).then(() => {
-        for (const el of live) this.leave(el, ms, true);
+        if (this.step === step) for (const el of live) this.leave(el, ms, true);
       });
+    }
+
+    // Fading out a layer while the one beneath is still fading in would let the
+    // background show through both (a dark flash at each change in a timelapse), so
+    // it waits for the base to be painted. It's out of the live set at once.
+    leaveOver(base, el, ms) {
+      el.dataset.leaving = "1";
+      (base.ready || Promise.resolve()).then(() => this.leave(el, ms));
     }
 
     small(prev, look) {
@@ -122,7 +159,8 @@
     set(el, layer) {
       el.style.setProperty("--kx", layer.x + "%");
       el.style.setProperty("--ky", layer.y + "%");
-      el.style.opacity = String(layer.opacity);
+      el.target = layer.opacity;
+      if (!el.loading) el.style.opacity = String(layer.opacity);
       this.filter(el.pic, layer);
       const glow = layer.lights ? layer.glow || 0 : 0;
       for (const part of [el.lights, el.bloom]) {
@@ -174,16 +212,21 @@
       el.lights = div("keshiki-lights");
       el.bloom = div("keshiki-bloom");
       el.append(el.pic, el.lights, el.bloom);
+      el.loading = !!ms;
       this.set(el, layer);
       el.style.opacity = ms ? "0" : String(layer.opacity);
       this.stack.appendChild(el);
-      if (!ms) return Promise.resolve();
-      // Fade in only once the image can paint, or it fades in from nothing.
-      return loaded(layer.src).then(() => {
+      if (!ms) return (el.ready = Promise.resolve());
+      // Fade in only once the image can paint, or it fades in from nothing; to the
+      // latest opacity, which a step since may have changed.
+      el.ready = loaded(layer.src).then(() => {
+        el.loading = false;
+        if (el.dataset.leaving) return;   // on its way out before it could paint
         void el.offsetWidth;
-        el.style.opacity = String(layer.opacity);
-        return new Promise((resolve) => setTimeout(resolve, ms));
+        el.style.opacity = String(el.target);
+        return faded(el, ms);
       });
+      return el.ready;
     }
 
     leave(el, ms, underneath) {

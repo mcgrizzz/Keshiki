@@ -100,6 +100,13 @@ def check(app, shots, base):
         return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2).closest('.readout') !== null; })()"""), \
         "the time readout is covered"
     run_js(dlg, "setv($('#playSpeed'), '5')")
+    # Every frame of the run, how much of the preview the pictures cover (1 - the product
+    # of each layer's transparency): a dip is a dark flash where two layers fade at once.
+    run_js(dlg, """window._frames = []; window._sampling = true; (function tick() {
+        const ops = $$('.preview .keshiki-layer').map(e => Number(getComputedStyle(e).opacity));
+        if (ops.length) window._frames.push({ cover: 1 - ops.reduce((p, o) => p * (1 - o), 1), layers: ops.length,
+                                              at: $('.preview .readout').textContent, ops: ops.map(o => o.toFixed(2)).join(' ') });
+        if (window._sampling) requestAnimationFrame(tick); })()""")
     # Play from now; Anki's window follows.
     run_js(dlg, "$('#play').click()")
     until(app, lambda: run_js(dlg, "$('#play').getAttribute('aria-label')") == "Pause", 3, "timelapse didn't start")
@@ -117,6 +124,13 @@ def check(app, shots, base):
     run_js(dlg, "$('#play').click()")
     # 24 hours on it's back at now: the readout says so and Anki's window has its own look again.
     until(app, lambda: run_js(dlg, "$('#play').getAttribute('aria-label')") == "Play", 8, "timelapse didn't finish")
+    run_js(dlg, "window._sampling = false")
+    frames = run_js(dlg, "window._frames")
+    assert len(frames) > 50, f"only {len(frames)} frames sampled"
+    darkest = min(f["cover"] for f in frames)
+    assert darkest > 0.97, f"the timelapse flashes dark: coverage fell to {darkest:.2f}: " + \
+        str([f for f in frames if f["cover"] <= 0.97][:5])
+    assert max(f["layers"] for f in frames) <= 4, "layers pile up during the timelapse"
     until(app, lambda: renderer.scene_look is None, 3, "the end of the run didn't hand Anki's window back")
     assert run_js(dlg, "$('.preview .readout').textContent.startsWith('Now') && $('#backToNow').hidden")
     # Back to now also ends a paused run.
@@ -125,7 +139,7 @@ def check(app, shots, base):
     run_js(dlg, "$('#play').click(); $('#backToNow').click()")
     until(app, lambda: renderer.scene_look is None, 5, "Back to now didn't hand Anki's window back")
     print("PASS: focusing a version previews it; play runs the next 24 hours at the chosen speed with pause, "
-          "and Anki's window follows until it's back at now.")
+          "with no dark frames, and Anki's window follows until it's back at now.")
 
     # Light: halfway through dusk's fade (19:00), both pictures carry a colour grade toward each other.
     def mid_fade_filters():

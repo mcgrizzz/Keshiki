@@ -203,7 +203,10 @@ async function addScene(kind) {
   changed(true);
 }
 
-function deleteScene(scene) {
+async function deleteScene(scene) {
+  const ok = await confirmDialog({ title: `Delete "${scene.name}"?`, yes: "Delete scene", danger: true,
+    text: "It comes off every screen that shows it; its pictures stay. Until you save, Cancel brings it back." });
+  if (!ok) return;
   stopPlaying();
   draft.scenes = draft.scenes.filter((s) => s !== scene);
   for (const screen of Object.values(draft.screens)) screen.scenes = screen.scenes.filter((id) => id !== scene.id);
@@ -594,7 +597,10 @@ function pickImage(current, use) {
     side.replaceChildren(box, help,
       h("div", { className: "image-meta" }, h("span", { className: "muted", title: chosen }, chosen),
         used ? h("span", { className: "muted" }, "Used by a scene")
-          : h("button", { type: "button", className: "link danger", onclick: async () => {
+          : h("button", { type: "button", className: "link danger", id: "deleteImage", onclick: async () => {
+              const ok = await confirmDialog({ title: "Delete this picture?", yes: "Delete picture", danger: true,
+                text: "It's removed from Keshiki's picture folder right away; Cancel can't bring it back." });
+              if (!ok) return;
               const res = await call("delete_image", chosen);
               images = res.images;
               delete draft.images[chosen];

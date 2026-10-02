@@ -154,6 +154,24 @@ def check(app, shots, base):
     run_js(dlg, "setv($('.editor .name'), 'Day cycle')")
     print("PASS: long scene names are cut short, and Delete scene is on the name's line.")
 
+    # Delete scene asks first, with focus on the safe answer; No keeps the scene.
+    count = run_js(dlg, "draft.scenes.length")
+    run_js(dlg, "$('#deleteScene').click()")
+    until(app, lambda: run_js(dlg, "!!$('#confirmYes')"), 5, "Delete scene didn't ask")
+    assert run_js(dlg, "document.activeElement.id") == "confirmNo"
+    run_js(dlg, "$('#confirmNo').click()")
+    assert run_js(dlg, "draft.scenes.length") == count and run_js(dlg, "!$('#modal').firstChild")
+    # A confirmation stacks over the picture picker; Esc takes off only the top one.
+    run_js(dlg, "$$('.version .pick')[0].click()")
+    until(app, lambda: run_js(dlg, "!!$('.tile')"), 5)
+    run_js(dlg, "confirmDialog({ title: 'Stacked?' })")
+    assert run_js(dlg, "$$('#modal .overlay').length") == 2
+    run_js(dlg, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
+    assert run_js(dlg, "$$('#modal .overlay').length") == 1 and run_js(dlg, "!!$('.tile')")
+    run_js(dlg, "$('#modal .dialog-foot button').click()")
+    assert run_js(dlg, "!$('#modal').firstChild")
+    print("PASS: deleting asks first, and a confirmation stacks over the picture picker.")
+
     # Use the day cycle while studying, then save.
     run_js(dlg, "byText('#nav button', 'Screens').click()")
     run_js(dlg, "byText('label', 'Scenes of its own').querySelector('input').click()")

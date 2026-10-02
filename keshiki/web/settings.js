@@ -134,7 +134,7 @@ function welcome() {
   return h("div", { className: "panel blank" },
     h("h2", {}, "Start with a picture"),
     h("p", {}, "Add a few images and they'll appear behind Anki's main window. Later you can turn them into scenes that follow the time of day or your progress through today's reviews."),
-    h("button", { type: "button", className: "primary", onclick: () => addImagesAsScenes(draft.screens.main) }, "Add images..."));
+    h("button", { type: "button", className: "primary", onclick: () => addImagesAsScenes() }, "Add images..."));
 }
 
 function sceneChooser(screen) {
@@ -158,8 +158,6 @@ function sceneChooser(screen) {
                           onclick: () => { screen.scenes = screen.scenes.filter((x) => x !== id); changed(true); } }, "×"));
         }),
         options.length ? add : null,
-        h("button", { type: "button", className: "link add-images", title: "Into this screen's album",
-                      onclick: () => addImagesAsScenes(screen) }, "Add images..."),
         singles.length > 1 && h("button", { type: "button", className: "link combine",
           title: "One album instead of a scene for each picture; they still take turns",
           onclick: () => combineIntoAlbum(screen, singles) }, `Combine ${singles.length} pictures into an album`))),
@@ -170,7 +168,7 @@ function sceneChooser(screen) {
           h("select", { className: "shuffle", onchange: (e) => { screen.every = Number(e.target.value); changed(); } },
             EVERY.map(([v, label]) => h("option", { value: v, selected: screen.every === v }, label))))
       : screenTurns(screen) === 1 && h("div", { className: "field" }, h("span", { className: "label" }, "Shuffle"),
-          h("span", { className: "help shuffle-hint" }, "Add another scene, or a few images, and they take turns here.")),
+          h("span", { className: "help shuffle-hint" }, "Add another scene, or an album, and they take turns here.")),
   ];
 }
 
@@ -203,24 +201,17 @@ function scenesPage() {
 }
 
 // Several pictures make an album (they take turns on a screen); one is a scene of its own.
-// Given a screen, the pictures go into its album (a new one if it has none) and the album
-// onto the screen; otherwise the deck list gets the new scene if it has nothing yet.
-async function addImagesAsScenes(screen = null) {
+// The deck list gets the new scene if it has nothing yet.
+async function addImagesAsScenes() {
   const res = await call("import");
   if (!res || res.error || !res.added.length) return;
   images = res.images;
-  const album = screen && screen.scenes.map(sceneById).find((sc) => sc && sc.kind === "album");
-  if (album) {
-    album.versions.push(...res.added.map((image) => ({ label: "", image })));
-    changed(true);
-    return;
-  }
-  const scene = await call("new_scene", res.added.length === 1 && !screen
+  const scene = await call("new_scene", res.added.length === 1
     ? { kind: "single", image: res.added[0] } : { kind: "album", images: res.added });
   draft.scenes.push(scene);
-  if (screen) screen.scenes.push(scene.id);
-  else if (!draft.screens.main.scenes.length) draft.screens.main.scenes.push(scene.id);
-  if (!screen || !sel) { sel = scene.id; albumShown = 0; }
+  if (!draft.screens.main.scenes.length) draft.screens.main.scenes.push(scene.id);
+  sel = scene.id;
+  albumShown = 0;
   changed(true);
 }
 

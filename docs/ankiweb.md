@@ -6,11 +6,12 @@ latest release's `.ankiaddon`; without it, paste each section by hand.
 
 ## Title
 
-A one-line description, under 80 characters. The same name as `manifest.json`, which Anki
-shows in its add-on list.
+A one-line description, under 80 characters. Anki lists the add-on under this title when
+it's installed from AnkiWeb (`manifest.json`'s name is for installs from a file); the words
+after the name are what people search for.
 
 ```text
-Keshiki - Background Scenes
+🖼️ Keshiki - Background scenes that follow the sun
 ```
 
 ## Tags
@@ -58,7 +59,7 @@ Background scenes for Anki's main window that follow the sun through the day, an
 * **Shuffle.** Several scenes per screen, crossfading every 15 minutes up to once a day.
 * **Readable.** Dim and blur set separately for the deck list and for studying.
 
-After installing, restart Anki and open **Tools → Keshiki Backgrounds...**. Your location is only looked up if you click **Find my location**.
+After installing, restart Anki and open **Tools → 🖼️ Keshiki**. Your location is only looked up if you click **Find my location**.
 
 > Needs Anki 26.08 or newer. Turn off other background add-ons (like Custom Background Image and Gear Icon) while you use it.
 

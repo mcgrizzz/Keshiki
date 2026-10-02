@@ -61,6 +61,18 @@ def check(app, shots, base):
         assert round(rect["y"]) == -top, (name, rect, top)
     print("PASS: each stage spans the window at its webview's offset.")
 
+    # Zooming the deck list (Ctrl+wheel, View > Zoom) keeps its stage on the whole window:
+    # the page is smaller or larger in CSS pixels, and the stage follows.
+    def spans(web, zoom):
+        rect = stage_state(app, web)["rect"]
+        top = web.mapTo(central, aqt.qt.QPoint(0, 0)).y()
+        return (abs(rect["width"] * zoom - central.width()) <= 2 and abs(rect["height"] * zoom - central.height()) <= 2
+                and abs(rect["y"] * zoom + top) <= 2)
+    for zoom in (1.5, 0.75, 1.0):
+        mw.web.setZoomFactor(zoom)
+        until(app, lambda z=zoom: spans(mw.web, z), 5, f"the stage didn't follow a zoom to {zoom}")
+    print("PASS: zooming the deck list keeps its picture lined up with the bars.")
+
     pump(app, 2.5)   # past the fade-in
     img = central.grab().toImage()
     if shots:

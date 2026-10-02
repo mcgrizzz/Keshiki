@@ -1,4 +1,4 @@
-Open **Tools → Keshiki Backgrounds...** (or this add-on's **Config** button) to change these settings. You don't need to edit the JSON by hand.
+Open **Tools → 🖼️ Keshiki** (or this add-on's **Config** button) to change these settings. You don't need to edit the JSON by hand.
 
 | Key | Meaning |
 | --- | --- |

@@ -353,7 +353,15 @@
         };
         if (document.body) start();
         else document.addEventListener("DOMContentLoaded", start);
-        window.addEventListener("resize", () => backdrops.soon());
+        // Zooming the page (Ctrl+wheel, View > Zoom) changes the window's size in its CSS
+        // pixels without resizing any widget, so ask Python for the geometry again.
+        let asked = false;
+        window.addEventListener("resize", () => {
+          backdrops.soon();
+          if (asked || typeof pycmd !== "function") return;
+          asked = true;
+          requestAnimationFrame(() => { asked = false; pycmd("keshiki:geometry"); });
+        });
       }
       this.main.geom(geom);
       this.main.apply(look, true);

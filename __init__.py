@@ -43,7 +43,7 @@ if mw is not None:
     # Add-ons load after the main window's webviews exist and before the first
     # page renders, so the first deck list already has its background.
     addon = Addon(__name__, inner="keshiki", start=_start, stop=lambda r: r.teardown(),
-                  settings=_settings, menu="Keshiki Backgrounds...", on_config=_config,
+                  settings=_settings, menu="🖼️ Keshiki", on_config=_config,
                   on_toggle=_toggled, after_reload=_redraw, web_exports=library.WEB_EXPORTS)
     addon.install()
 

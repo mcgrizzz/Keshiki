@@ -14,7 +14,7 @@ import random
 import time
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 from aqt import gui_hooks
 from aqt.qt import QEvent, QObject, QPoint
@@ -69,6 +69,7 @@ class Renderer(QObject):
         self.subs.add(gui_hooks.operation_did_execute, self.on_operation, "Collection change")
         # A new day brings new cards: "all done" may no longer hold.
         self.subs.add(gui_hooks.day_did_change, refresh_progress, "New day")
+        self.subs.filter(gui_hooks.webview_did_receive_js_message, self.on_js_message, "Page message")
         self.subs.timer(self, TICK_MS, self.refresh, "Background tick")
         for widget in self._webviews() + [self.mw.form.centralwidget]:
             widget.installEventFilter(self)
@@ -188,6 +189,14 @@ class Renderer(QObject):
         pos = web.mapTo(central, QPoint(0, 0))
         zoom = web.zoomFactor() or 1
         return {"w": central.width() / zoom, "h": central.height() / zoom, "x": pos.x() / zoom, "y": pos.y() / zoom}
+
+    def on_js_message(self, handled: Tuple[bool, Any], message: str, context: Any) -> Tuple[bool, Any]:
+        # A page resized itself: zooming changes its size in CSS pixels, with no widget event.
+        if message != "keshiki:geometry":
+            return handled
+        if not self._geometry.pending:
+            self._geometry.restart(0)
+        return (True, None)
 
     def push_geometry(self) -> None:
         for web in self._webviews():

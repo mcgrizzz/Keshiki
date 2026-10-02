@@ -9,7 +9,16 @@ let scrub = null;      // scene editor position: minutes of day or percent done
 
 const EVERY = [[0, "Each time Anki starts"], [15, "15 minutes"], [30, "30 minutes"], [60, "Hour"],
                [180, "3 hours"], [1440, "Day"]];
-const KIND_NAMES = { single: "Single image", day: "Day cycle", progress: "Review progress" };
+const KIND_NAMES = { single: "Single image", day: "Day cycle", progress: "Review progress", album: "Album" };
+// An album's pictures that can show (a picture still to choose takes no turn).
+const albumPictures = (scene) => scene.versions.filter((v) => v.image);
+const kindLabel = (scene) => (scene.kind === "album"
+  ? `Album · ${albumPictures(scene).length} picture${albumPictures(scene).length === 1 ? "" : "s"}` : KIND_NAMES[scene.kind]);
+// How many turns a screen's shuffle has: one per scene, one per picture of an album.
+const screenTurns = (screen) => screen.scenes.reduce((n, id) => {
+  const scene = sceneById(id);
+  return n + (!scene ? 0 : scene.kind === "album" ? albumPictures(scene).length : 1);
+}, 0);
 Object.assign(ICONS, {
   screens: "M3 5h18v12H3zM8 21h8M12 17v4",
   scenes: "M3 18l5-6 4 4 3-3 6 5M3 5h18v14H3zM15.5 9.5a1.5 1.5 0 1 0 0-.01",
@@ -130,6 +139,7 @@ function welcome() {
 
 function sceneChooser(screen) {
   const options = draft.scenes.filter((s) => !screen.scenes.includes(s.id));
+  const singles = screen.scenes.map(sceneById).filter((sc) => sc && sc.kind === "single" && sc.versions[0].image);
   const add = h("select", { "aria-label": "Add a scene", onchange: (e) => {
     if (e.target.value) { screen.scenes.push(e.target.value); changed(true); }
   } }, h("option", { value: "" }, screen.scenes.length ? "Add another..." : "Choose a scene..."),
@@ -142,19 +152,24 @@ function sceneChooser(screen) {
           const thumb = sceneThumb(scene);
           return h("span", { className: "chip" },
             thumb ? h("img", { src: thumb, alt: "" }) : h("span", { className: "swatch" }),
-            h("span", { className: "chip-name", title: scene.name }, scene.name),
+            h("span", { className: "chip-name", title: scene.name },
+              scene.kind === "album" ? `${scene.name} (${albumPictures(scene).length})` : scene.name),
             h("button", { type: "button", "aria-label": `Remove ${scene.name}`, title: "Remove",
                           onclick: () => { screen.scenes = screen.scenes.filter((x) => x !== id); changed(true); } }, "×"));
         }),
         options.length ? add : null,
-        h("button", { type: "button", className: "link add-images", title: "Each picture becomes a scene on this screen",
-                      onclick: () => addImagesAsScenes(screen) }, "Add images..."))),
-    // A screen's scenes take turns; with one there's nothing to shuffle yet, so say how.
-    screen.scenes.length > 1
+        h("button", { type: "button", className: "link add-images", title: "Into this screen's album",
+                      onclick: () => addImagesAsScenes(screen) }, "Add images..."),
+        singles.length > 1 && h("button", { type: "button", className: "link combine",
+          title: "One album instead of a scene for each picture; they still take turns",
+          onclick: () => combineIntoAlbum(screen, singles) }, `Combine ${singles.length} pictures into an album`))),
+    // A screen's scenes, and each picture of an album, take turns; with one there's nothing
+    // to shuffle yet, so say how.
+    screenTurns(screen) > 1
       ? h("div", { className: "field" }, h("label", {}, "Shuffle every"),
           h("select", { className: "shuffle", onchange: (e) => { screen.every = Number(e.target.value); changed(); } },
             EVERY.map(([v, label]) => h("option", { value: v, selected: screen.every === v }, label))))
-      : screen.scenes.length === 1 && h("div", { className: "field" }, h("span", { className: "label" }, "Shuffle"),
+      : screenTurns(screen) === 1 && h("div", { className: "field" }, h("span", { className: "label" }, "Shuffle"),
           h("span", { className: "help shuffle-hint" }, "Add another scene, or a few images, and they take turns here.")),
   ];
 }
@@ -173,7 +188,7 @@ function scenesPage() {
   if (!sceneById(sel)) sel = draft.scenes.length ? draft.scenes[0].id : null;
   const scene = sceneById(sel);
   return [
-    ...pageHead("Scenes", "A scene is one picture, or versions of one picture that take turns through the day or as today's reviews get done."),
+    ...pageHead("Scenes", "A scene is one picture, an album of pictures that take turns, or versions of one picture that change through the day."),
     h("div", { className: "scenes" },
       h("div", {},
         h("div", { className: "list-actions" },
@@ -181,25 +196,53 @@ function scenesPage() {
           h("button", { type: "button", onclick: () => addScene("day") }, "New day cycle")),
         h("div", { className: "scene-list" }, draft.scenes.map((s) =>
           h("button", { type: "button", className: "scene-item", "aria-current": s.id === sel ? "true" : "false",
-                        onclick: () => { stopPlaying(); sel = s.id; scrub = null; call("end_moment"); render(); } },
+                        onclick: () => { stopPlaying(); sel = s.id; scrub = null; albumShown = 0; call("end_moment"); render(); } },
             h("span", { className: "thumb", style: bg(sceneThumb(s)) }),
-            h("span", { className: "item-name", title: s.name }, s.name), h("small", {}, KIND_NAMES[s.kind]))))),
+            h("span", { className: "item-name", title: s.name }, s.name), h("small", {}, kindLabel(s)))))),
       scene ? sceneEditor(scene) : h("div", { className: "panel blank" }, h("p", {}, "Add images or start a day cycle to make your first scene.")))];
 }
 
-// Each picture becomes a single-image scene. Given a screen, they all go on it (where
-// they take turns); otherwise the deck list gets the first if it has nothing yet.
+// Several pictures make an album (they take turns on a screen); one is a scene of its own.
+// Given a screen, the pictures go into its album (a new one if it has none) and the album
+// onto the screen; otherwise the deck list gets the new scene if it has nothing yet.
 async function addImagesAsScenes(screen = null) {
   const res = await call("import");
-  if (!res || res.error) return;
+  if (!res || res.error || !res.added.length) return;
   images = res.images;
-  for (const name of res.added) {
-    const scene = await call("new_scene", { kind: "single", image: name });
-    draft.scenes.push(scene);
-    if (screen) screen.scenes.push(scene.id);
-    else if (!draft.screens.main.scenes.length) draft.screens.main.scenes.push(scene.id);
-    sel = sel || scene.id;
+  const album = screen && screen.scenes.map(sceneById).find((sc) => sc && sc.kind === "album");
+  if (album) {
+    album.versions.push(...res.added.map((image) => ({ label: "", image })));
+    changed(true);
+    return;
   }
+  const scene = await call("new_scene", res.added.length === 1 && !screen
+    ? { kind: "single", image: res.added[0] } : { kind: "album", images: res.added });
+  draft.scenes.push(scene);
+  if (screen) screen.scenes.push(scene.id);
+  else if (!draft.screens.main.scenes.length) draft.screens.main.scenes.push(scene.id);
+  if (!screen || !sel) { sel = scene.id; albumShown = 0; }
+  changed(true);
+}
+
+async function addImagesToAlbum(scene) {
+  const res = await call("import");
+  if (!res || res.error || !res.added.length) return;
+  images = res.images;
+  scene.versions.push(...res.added.map((image) => ({ label: "", image })));
+  changed(true);
+}
+
+// Single-picture scenes on a screen, folded into one album there. Ones no other screen
+// shows go: the album has their pictures (and positions, which belong to the pictures).
+async function combineIntoAlbum(screen, singles) {
+  const album = await call("new_scene", { kind: "album", images: singles.map((sc) => sc.versions[0].image) });
+  draft.scenes.push(album);
+  const ids = new Set(singles.map((sc) => sc.id));
+  const at = screen.scenes.findIndex((id) => ids.has(id));
+  screen.scenes = screen.scenes.filter((id) => !ids.has(id));
+  screen.scenes.splice(at, 0, album.id);
+  const shown = new Set(Object.values(draft.screens).flatMap((sc) => sc.scenes));
+  draft.scenes = draft.scenes.filter((sc) => !ids.has(sc.id) || shown.has(sc.id));
   changed(true);
 }
 
@@ -227,7 +270,7 @@ function sceneEditor(scene) {
   pausePlaying();   // a redraw keeps the run; play carries on with it
   const preview = h("div", { className: "preview" },
     h("span", { className: "readout" }),
-    scene.kind !== "single" && h("div", { className: "preview-controls" },
+    timed(scene) && h("div", { className: "preview-controls" },
       h("button", { type: "button", id: "backToNow", hidden: scrub === null,
                     title: "Stop previewing this moment, here and in Anki's window",
                     onclick: () => { stopPlaying(); scrub = null; updateScenePreview(preview, false); } }, "Back to now"),
@@ -251,17 +294,46 @@ function sceneEditor(scene) {
                      if (item) { item.textContent = scene.name; item.title = scene.name; }
                      changed();
                    } }),
-      h("span", { className: "kind" }, KIND_NAMES[scene.kind]),
+      h("span", { className: "kind" }, kindLabel(scene)),
       h("button", { type: "button", className: "danger", id: "deleteScene", onclick: () => deleteScene(scene) },
         icon("trash"), "Delete scene")),
     preview);
-  if (scene.kind !== "single") panel.append(ribbon(scene, preview));
+  if (timed(scene)) panel.append(ribbon(scene, preview));
   panel.append(versionTable(scene, preview));
   return panel;
 }
 
 // One line per version: picture, name, when it starts, how long it fades in.
+// Day cycles and progress scenes change with the clock or today's reviews; they have a timeline.
+const timed = (scene) => scene.kind === "day" || scene.kind === "progress";
+
+// An album's pictures as tiles: clicking one shows it in the preview and opens the picker
+// (to place or replace it), × takes it out, and the last tile adds more.
+let albumShown = 0;
+function albumGrid(scene, preview) {
+  const tiles = scene.versions.map((v, i) => h("div", { className: "album-tile" + (i === albumShown ? " shown" : "") },
+    h("button", { type: "button", className: "pick" + (v.image ? "" : " empty"), style: bg(thumbUrl(v.image)),
+                  title: v.image, "aria-label": `Picture ${v.image}`,
+                  onclick: () => {
+                    albumShown = i;
+                    for (const t of document.querySelectorAll(".album-tile")) t.classList.toggle("shown", t === tiles[i]);
+                    updateScenePreview(preview, false);
+                    pickImage(v.image, (name) => { v.image = name; changed(true); });
+                  } }, v.image ? "" : "+"),
+    h("button", { type: "button", className: "icon-only remove", title: "Take it out of the album", "aria-label": `Remove ${v.image}`,
+                  onclick: () => {
+                    scene.versions.splice(i, 1);
+                    albumShown = Math.max(0, Math.min(albumShown, scene.versions.length - 1));
+                    changed(true);
+                  } }, icon("close"))));
+  return h("div", { className: "album-wrap" },
+    h("p", { className: "help" }, "On a screen, the album's pictures take turns with its other scenes, one each time its shuffle changes."),
+    h("div", { className: "album" }, ...tiles,
+      h("button", { type: "button", className: "album-add", onclick: () => addImagesToAlbum(scene) }, "+ Add images...")));
+}
+
 function versionTable(scene, preview) {
+  if (scene.kind === "album") return albumGrid(scene, preview);
   if (scene.kind === "single") {
     const v = scene.versions[0];
     return h("div", { className: "versions single" },
@@ -554,13 +626,15 @@ function updateScenePreview(preview, redrawRibbon) {
   const readout = preview.querySelector(".readout");
   readout.textContent = scene.kind === "day" ? (scrub === null ? "Now, " : "") + hhmm(position)
     : scene.kind === "progress" ? (position >= 100 ? "Finished" : `${Math.round(position)}% done`) : "";
-  readout.hidden = scene.kind === "single";
+  readout.hidden = !timed(scene);
   const back = document.getElementById("backToNow");
   if (back) back.hidden = scrub === null;
   // A chosen moment shows in Anki's window too; back to now hands it back to the screen's own look.
   // While playing, each step eases into the next instead of jumping.
   const ease = playing ? 160 : 0;
-  return call("compose", { scene, day: draft.day, light: draft.light, position, images: draft.images,
+  const shown = scene.kind !== "album" ? scene
+    : { ...scene, kind: "single", versions: scene.versions.slice(albumShown, albumShown + 1) };
+  return call("compose", { scene: shown, day: draft.day, light: draft.light, position, images: draft.images,
                            show: scrub !== null, cfg: draft, fade: ease }).then((res) => {
     // A late answer for a scene no longer on screen changes nothing.
     if (!res || res.error || sceneById(sel) !== scene || !preview.isConnected) return;

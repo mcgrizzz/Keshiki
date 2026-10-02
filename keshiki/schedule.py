@@ -50,8 +50,9 @@ def build_look(cfg: dict, screen: str, *, minute_of_day: float, now_minutes: int
     source, look = screen_source(cfg, screen, all_done)
     if source is None:
         return None
-    scene = scenes_by_id(cfg).get(pick_scene(source.get("scenes") or [], int(source.get("every") or 0),
-                                             now_minutes, launch_seed) or "")
+    turn = pick_scene(screen_turns(cfg, source.get("scenes") or []), int(source.get("every") or 0),
+                      now_minutes, launch_seed)
+    scene = scene_for_turn(cfg, turn or "")
     if scene is None:
         return None
     position = percent_done() if scene.get("kind") == "progress" else minute_of_day
@@ -234,6 +235,31 @@ def _num(value) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def screen_turns(cfg: dict, scene_ids: Sequence[str]) -> List[str]:
+    """What takes turns on a screen: each scene, but each picture of an album
+    ("<album id>#<picture index>"), so an album shuffles its pictures with the rest."""
+    by_id = scenes_by_id(cfg)
+    turns: List[str] = []
+    for sid in scene_ids:
+        scene = by_id.get(sid)
+        if scene and scene.get("kind") == "album":
+            turns += [f"{sid}#{i}" for i, v in enumerate(scene.get("versions") or []) if v.get("image")]
+        elif scene:
+            turns.append(sid)
+    return turns
+
+
+def scene_for_turn(cfg: dict, turn: str) -> Optional[dict]:
+    """The scene a turn shows: an album's turn is a scene of just that picture."""
+    sid, _, index = turn.partition("#")
+    scene = scenes_by_id(cfg).get(sid)
+    if scene is None or not index:
+        return scene
+    versions = scene.get("versions") or []
+    i = int(index)
+    return dict(scene, kind="single", versions=[versions[i]]) if 0 <= i < len(versions) else None
 
 
 def pick_scene(ids: Sequence[str], every_minutes: int, now_minutes: int, launch_seed: int) -> Optional[str]:

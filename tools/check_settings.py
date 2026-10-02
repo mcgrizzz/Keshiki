@@ -52,13 +52,33 @@ def check(app, shots, base):
     assert run_js(dlg, "$('.blank h2').textContent") == "Start with a picture"
     shoot(dlg, "welcome")
 
-    # First run: "Add images..." makes a scene per image and shows them on the deck list.
+    # First run: "Add images..." makes an album of the pictures and shows it on the deck list.
     run_js(dlg, "byText('button', 'Add images...').click()")
-    until(app, lambda: run_js(dlg, "$$('.chip').length") == 4, 10, "images didn't become scenes")
+    until(app, lambda: run_js(dlg, "$$('.chip').length") == 1, 10, "the images didn't become an album")
+    assert run_js(dlg, "$('.chip-name').textContent") == "Album (4)"
     until(app, lambda: renderer.preview is not None, 5, "draft didn't preview in the main window")
     assert run_js(dlg, "!$('#save').disabled")
     shoot(dlg, "screens")
-    print("PASS: first images become scenes on the deck list and preview live.")
+    print("PASS: first images become an album on the deck list and preview live.")
+
+    # The album on the Scenes page: its pictures as tiles; a tile shows in the preview and
+    # opens the picker; × takes one out.
+    run_js(dlg, "byText('#nav button', 'Scenes').click()")
+    until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 4, 5, "the album's pictures aren't tiles")
+    assert run_js(dlg, "$('.editor .kind').textContent") == "Album · 4 pictures"
+    assert run_js(dlg, "!$('.ribbon') && !$('#play')"), "an album has no timeline"
+    run_js(dlg, "$$('.album-tile .pick')[2].click()")
+    until(app, lambda: run_js(dlg, "!!$('.tile')"), 5, "the tile didn't open the picker")
+    until(app, lambda: run_js(dlg, "$$('.preview .keshiki-layer').filter(e => !e.dataset.leaving)"
+                                   ".map(e => e.dataset.src.split('/').pop())") == ["dusk.png"], 5,
+          "the preview doesn't show the tile's picture")
+    run_js(dlg, "$('#modal .dialog-foot button').click()")
+    run_js(dlg, "$$('.album-tile .remove')[3].click()")
+    until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 3, 5)
+    run_js(dlg, "const a = draft.scenes[0]; a.versions.push({ label: '', image: 'night.png' }); changed(true)")
+    until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 4, 5)
+    shoot(dlg, "album")
+    print("PASS: an album shows its pictures as tiles; each previews, opens the picker, or comes out.")
 
     # A day cycle from the template, one image per version.
     run_js(dlg, "byText('#nav button', 'Scenes').click()")
@@ -313,7 +333,7 @@ def check(app, shots, base):
     cfg = mw.addonManager.getConfig("keshiki")
     day_id = next(s["id"] for s in cfg["scenes"] if s["kind"] == "day")
     assert cfg["screens"]["study"] == dict(cfg["screens"]["study"], same_as_main=False, scenes=[day_id]), cfg["screens"]
-    assert len(cfg["screens"]["main"]["scenes"]) == 4 and renderer.preview is None
+    assert len(cfg["screens"]["main"]["scenes"]) == 1 and renderer.preview is None
     shoot(dlg, "screens-saved")
     assert run_js(dlg, "(() => { const [a, b] = $$('.two > .panel'); return Math.abs(a.offsetHeight - b.offsetHeight) <= 1; })()"), \
         "Deck list and Studying panels differ in height"
@@ -330,12 +350,22 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "draft.screens.study.scenes.length") == 2, 5, "Add images didn't add to studying")
     assert run_js(dlg, "sceneById(draft.screens.study.scenes[1]).versions[0].image") == "harbour.png"
     assert run_js(dlg, f"!!{study_card}.querySelector('select.shuffle')"), "no shuffle with two scenes"
-    assert run_js(dlg, "draft.screens.main.scenes.length") == 4
+    assert run_js(dlg, "draft.screens.main.scenes.length") == 1
+    # Single-picture scenes on a screen fold into one album.
+    run_js(dlg, """(async () => { for (const image of ['dawn.png', 'dusk.png']) {
+        const sc = await call('new_scene', { kind: 'single', image }); draft.scenes.push(sc);
+        draft.screens.main.scenes.push(sc.id); } changed(true); })()""")
+    until(app, lambda: run_js(dlg, f"!!{main_card}.querySelector('.combine')"), 5, "no Combine for two single pictures")
+    assert run_js(dlg, f"{main_card}.querySelector('.combine').textContent") == "Combine 2 pictures into an album"
+    run_js(dlg, f"{main_card}.querySelector('.combine').click()")
+    until(app, lambda: run_js(dlg, "draft.screens.main.scenes.length") == 2, 5, "Combine didn't fold them")
+    assert run_js(dlg, "sceneById(draft.screens.main.scenes[1]).versions.map(v => v.image)") == ["dawn.png", "dusk.png"]
+    assert run_js(dlg, "draft.scenes.filter(s => s.kind === 'single').length") == 0, "the single scenes stayed"
     shoot(dlg, "screens-shuffle")
     dlg.kiso_bridge.pick_files = lambda: files
     run_js(dlg, "$('#cancel').click()")
     until(app, lambda: run_js(dlg, "draft.screens.study.scenes.length") == 1, 5)
-    print("PASS: each screen shows its shuffle, and adds pictures as scenes of its own.")
+    print("PASS: each screen shows its shuffle, adds pictures to its album, and folds single pictures into one.")
 
     # Cancel drops unsaved edits and keeps the window open.
     run_js(dlg, "setv($$('input[aria-label=Blur]')[0], '12')")
@@ -370,7 +400,7 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "!!$('#restorePage')"), 5, "no Restore defaults after changing dim")
     run_js(dlg, "$('#restorePage').click()")
     until(app, lambda: run_js(dlg, "$$('input[aria-label=Dim]')[0].value") == "15", 5, "Restore didn't reset dim")
-    assert run_js(dlg, "$$('.chip').length") == 5, "Restore dropped the chosen scenes"
+    assert run_js(dlg, "$$('.chip').length") == 2, "Restore dropped the chosen scenes"
     assert mw.addonManager.getConfig("keshiki")["screens"]["main"]["dim"] == 15
     run_js(dlg, "byText('#nav button', 'Day & time').click()")
     run_js(dlg, "byText('label', 'The sun where I am').querySelector('input').click()")

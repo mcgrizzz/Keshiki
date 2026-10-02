@@ -1,5 +1,15 @@
 from keshiki.config import migrate, new_scene
-from keshiki.schedule import build_look, compose, day_anchors, grade_toward, light, pick_scene, version_starts
+from keshiki.schedule import (
+    build_look,
+    compose,
+    day_anchors,
+    grade_toward,
+    light,
+    pick_scene,
+    scene_for_turn,
+    screen_turns,
+    version_starts,
+)
 
 ANCHORS = {"sunrise": 6 * 60, "sunset": 19 * 60}
 
@@ -173,6 +183,21 @@ def test_a_version_can_start_when_the_one_above_is_fully_in():
     # The first version has nothing above it: it counts from midnight.
     first = {"kind": "day", "versions": [{"image": "a", "anchor": "after", "offset": 20, "fade": 5}]}
     assert version_starts(first, anchors)[0][:2] == (20, 5)
+
+
+def test_an_albums_pictures_each_take_a_turn():
+    album = new_scene("album", images=["a.png", "b.png", ""])
+    album["versions"][2]["image"] = ""          # a picture still to choose takes no turn
+    day = new_scene("day")
+    cfg = {"scenes": [album, day]}
+    turns = screen_turns(cfg, [day["id"], album["id"], "gone"])
+    assert turns == [day["id"], f"{album['id']}#0", f"{album['id']}#1"]
+    one = scene_for_turn(cfg, f"{album['id']}#1")
+    assert one["kind"] == "single" and [v["image"] for v in one["versions"]] == ["b.png"]
+    assert scene_for_turn(cfg, day["id"]) is day and scene_for_turn(cfg, f"{album['id']}#9") is None
+    # Over a day of hourly turns the screen shows the day cycle and both pictures.
+    shown = {pick_scene(turns, 60, minute, 7) for minute in range(0, 24 * 60, 60)}
+    assert shown == set(turns)
 
 
 def test_grade_runs_from_no_change_to_matching_the_other_picture():

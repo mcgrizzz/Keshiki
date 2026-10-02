@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import secrets
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Sequence, Tuple
 
 from ._kiso import config as kiso_config
 
@@ -92,15 +92,18 @@ def new_id() -> str:
     return secrets.token_hex(4)
 
 
-def new_scene(kind: str, name: str = "", image: str = "") -> dict:
-    """A scene of the given kind, laid out from its template."""
+def new_scene(kind: str, name: str = "", image: str = "", images: Sequence[str] = ()) -> dict:
+    """A scene of the given kind, laid out from its template. An album is a set of
+    pictures that take turns on a screen, one each turn of its shuffle."""
     if kind == "day":
         versions = [dict(v, image="") for v in _DAY_TEMPLATE]
     elif kind == "progress":
         versions = [dict(v, image="") for v in _PROGRESS_TEMPLATE]
+    elif kind == "album":
+        versions = [{"label": "", "image": name_} for name_ in images]
     else:
         kind, versions = "single", [{"label": "Image", "image": image}]
-    default_name = {"day": "Day cycle", "progress": "Review progress"}.get(kind, _stem(image) or "Scene")
+    default_name = {"day": "Day cycle", "progress": "Review progress", "album": "Album"}.get(kind, _stem(image) or "Scene")
     return {"id": new_id(), "name": name or default_name, "kind": kind, "versions": versions}
 
 

@@ -8,14 +8,14 @@ Background scenes for Anki's main window that follow the sun through the day, an
 - **Day cycles.** Give a scene dawn, day, dusk and night versions. Each fades in between two moments of the sun you choose (from first light to sunrise, say), at a set time, or once the version before it is fully in, for the real sun where you are or the sunrise and sunset times you set.
 - **Light by the sun.** Optionally colour any picture by the sun's height: warm low sun, plain midday, blue twilight and a dim, faded night, based on published daylight measurements and night-vision research. At night, a picture's own lights (lit windows, lamps, stars) stay lit and glow softly.
 - **All done for today.** Show different scenes once nothing is left to study in any deck.
-- **Shuffle.** Put several scenes on a screen, or add a batch of pictures straight to it, and they take turns: every 15 minutes up to once a day, or each time Anki starts. A screen with one scene keeps it.
+- **Albums and shuffle.** Add a batch of pictures and they become an album. On a screen, an album's pictures take turns with its other scenes: every 15 minutes up to once a day, or each time Anki starts. A screen with a single scene keeps it.
 - **Readable.** Dim and blur are set separately for the deck list and for studying, and dimming follows Anki's light or dark theme.
 
 ## Using it
 
 Open **Tools → 🖼️ Keshiki**.
 
-1. On **Screens**, choose **Add images...**. Each picture becomes a scene on the deck list.
+1. On **Screens**, choose **Add images...**. The pictures become an album on the deck list, taking turns. Already have single-picture scenes there? **Combine** folds them into an album.
 2. On **Scenes**, choose **New day cycle**, then pick a picture for each version. Drag along the strip under the preview to see any time of day, or press ▶ to watch the next 24 hours as a timelapse. Anki's main window follows along until you press **Back to now**.
 3. Back on **Screens**, give **Studying** its own scenes if you like, and set dim and blur.
 

@@ -81,7 +81,7 @@ class SettingsBridge(kiso_settings.Bridge):
         return [central.width(), central.height()] if central and central.height() else [16, 10]
 
     def op_new_scene(self, arg) -> dict:
-        return new_scene(arg.get("kind", "single"), image=arg.get("image", ""))
+        return new_scene(arg.get("kind", "single"), image=arg.get("image", ""), images=arg.get("images") or ())
 
     def op_save(self, cfg) -> dict:
         cfg, _ = migrate(cfg)

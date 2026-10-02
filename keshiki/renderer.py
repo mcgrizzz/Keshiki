@@ -8,6 +8,7 @@ across all three without seams.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import random
@@ -20,7 +21,7 @@ from aqt import gui_hooks
 from aqt.qt import QEvent, QObject, QPoint
 from aqt.webview import AnkiWebView, WebContent
 
-from . import library
+from . import folders, library
 from ._kiso import config as kiso_config
 from ._kiso.hooks import Subscriptions
 from .config import ADDON_PACKAGE, migrate
@@ -71,8 +72,23 @@ class Renderer(QObject):
         self.subs.add(gui_hooks.day_did_change, refresh_progress, "New day")
         self.subs.filter(gui_hooks.webview_did_receive_js_message, self.on_js_message, "Page message")
         self.subs.timer(self, TICK_MS, self.refresh, "Background tick")
+        self.refresh_folders()
         for widget in self._webviews() + [self.mw.form.centralwidget]:
             widget.installEventFilter(self)
+
+    def refresh_folders(self) -> None:
+        """Linked albums catch up with their folders (at startup); links no album uses go.
+        A folder problem is logged, never stops the background."""
+        cfg = copy.deepcopy(self.cfg)
+        try:
+            changed, _missing = folders.refresh(cfg)
+            library.prune_links(folders.links_in_use(cfg))
+        except OSError:
+            log.exception("Couldn't rescan linked folders")
+            return
+        if changed:
+            self.mw.addonManager.writeConfig(ADDON_PACKAGE, cfg)
+            self.set_config(cfg)
 
     def teardown(self) -> None:
         """Undo install(), for a dev reload; pages keep their background until redrawn."""

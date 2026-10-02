@@ -1,27 +1,52 @@
-"""The user's images: copied into user_files (which survives add-on updates), with small thumbnails."""
+"""The user's images: copied into user_files (which survives add-on updates), with small thumbnails.
+
+A folder can also be linked instead of copied: user_files/folders/<link id> is a link to it (a
+symlink, or a junction on Windows, which needs no special rights), so Anki's media server serves
+its pictures live. Its pictures are named "@<link id>/<path in the folder>". Anki moves
+user_files aside while it updates the add-on and back afterwards, so links survive updates;
+removing a link never touches what it points to.
+"""
 
 from __future__ import annotations
 
 import filecmp
+import hashlib
 import json
 import math
+import os
 import re
+import secrets
 import shutil
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Iterable, List, Optional
 from urllib.parse import quote
 
 ADDON_DIR = Path(__file__).resolve().parents[1]
 IMAGES = ADDON_DIR / "user_files" / "images"
 THUMBS = ADDON_DIR / "user_files" / "thumbs"
+FOLDERS = ADDON_DIR / "user_files" / "folders"
 EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp")
 # Served by Anki's media server under /_addons/<folder>/ (see setWebExports in the root __init__).
-WEB_EXPORTS = r"user_files/(images|thumbs)/.+"
+WEB_EXPORTS = r"user_files/(images|thumbs|folders)/.+"
 THUMB_WIDTH = 480
 
 
+def is_linked(name: str) -> bool:
+    return name.startswith("@")
+
+
+def image_path(name: str) -> Path:
+    return FOLDERS / name[1:] if is_linked(name) else IMAGES / name
+
+
 def image_url(name: str) -> str:
+    if is_linked(name):
+        return f"/_addons/{ADDON_DIR.name}/user_files/folders/{quote(name[1:])}"
     return f"/_addons/{ADDON_DIR.name}/user_files/images/{quote(name)}"
+
+
+def picture_info(name: str) -> Dict[str, str]:
+    return {"name": name, "url": image_url(name), "thumb": thumb_url(name)}
 
 
 def thumb_url(name: str) -> str:
@@ -65,7 +90,7 @@ def delete(name: str) -> None:
             path.unlink()
 
 
-def make_thumb(path: Path) -> None:
+def make_thumb(path: Path, name: str = "") -> None:
     from aqt.qt import QImage, Qt
 
     image = QImage(str(path))
@@ -74,11 +99,25 @@ def make_thumb(path: Path) -> None:
     THUMBS.mkdir(parents=True, exist_ok=True)
     if image.width() > THUMB_WIDTH:
         image = image.scaledToWidth(THUMB_WIDTH, Qt.TransformationMode.SmoothTransformation)
-    image.save(str(THUMBS / _thumb_name(path.name)), "JPG", 85)
+    image.save(str(THUMBS / _thumb_name(name or path.name)), "JPG", 85)
+
+
+def _cache_name(name: str) -> str:
+    """The name a picture's thumbnail and measurements are kept under. A linked picture can
+    change in its folder, so its name includes the file's size and time."""
+    if not is_linked(name):
+        return name
+    try:
+        st = image_path(name).stat()
+        mark = f"{st.st_size}-{int(st.st_mtime)}"
+    except OSError:
+        mark = "missing"
+    digest = hashlib.sha1(f"{name}|{mark}".encode()).hexdigest()[:16]
+    return f"linked-{digest}{Path(name).suffix.lower()}"
 
 
 def _thumb_name(name: str) -> str:
-    return name + ".jpg"
+    return _cache_name(name) + ".jpg"
 
 
 def _safe_name(name: str) -> str:
@@ -103,7 +142,7 @@ def image_stats(name: str) -> Optional[dict]:
         if stats is not None and "lights" not in stats:
             luma = 0.2126 * stats["mean"][0] + 0.7152 * stats["mean"][1] + 0.0722 * stats["mean"][2]
             # Only a picture that shows night has lights worth finding.
-            stats["lights"] = luma < NIGHT_LUMA and find_lights(IMAGES / name, THUMBS / _lights_name(name))
+            stats["lights"] = luma < NIGHT_LUMA and find_lights(image_path(name), THUMBS / _lights_name(name))
             THUMBS.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(stats), encoding="utf-8")
         _stats[name] = stats
@@ -189,7 +228,7 @@ def _measure(name: str) -> Optional[dict]:
     from aqt.qt import QImage, Qt
 
     thumb = THUMBS / _thumb_name(name)
-    image = QImage(str(thumb if thumb.exists() else IMAGES / name))
+    image = QImage(str(thumb if thumb.exists() else image_path(name)))
     if image.isNull():
         return None
     image = image.scaled(96, 96, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
@@ -206,8 +245,68 @@ def _measure(name: str) -> Optional[dict]:
 
 
 def _stats_name(name: str) -> str:
-    return name + ".stats.json"
+    return _cache_name(name) + ".stats.json"
 
 
 def _lights_name(name: str) -> str:
-    return name + ".lights.png"
+    return _cache_name(name) + ".lights.png"
+
+
+# -- linked folders ----------------------------------------------------------
+
+def folder_pictures(folder: Path, subfolders: bool) -> List[Path]:
+    """The pictures in a folder (and its subfolders), in name order, skipping hidden files."""
+    paths = folder.rglob("*") if subfolders else folder.iterdir()
+    return sorted((p for p in paths if p.suffix.lower() in EXTENSIONS and p.is_file()
+                   and not any(part.startswith(".") for part in p.relative_to(folder).parts)),
+                  key=lambda p: p.relative_to(folder).as_posix().lower())
+
+
+def link_folder(folder: str, link_id: str = "") -> str:
+    """Link a folder into user_files/folders and return the link's id."""
+    target = Path(folder).expanduser().resolve()
+    if not target.is_dir():
+        raise FileNotFoundError(f"No folder at {folder}")
+    FOLDERS.mkdir(parents=True, exist_ok=True)
+    link_id = link_id or secrets.token_hex(4)
+    dest = FOLDERS / link_id
+    if os.name == "nt":
+        import _winapi
+        _winapi.CreateJunction(str(target), str(dest))
+    else:
+        dest.symlink_to(target, target_is_directory=True)
+    return link_id
+
+
+def _is_link(path: Path) -> bool:
+    return path.is_symlink() or getattr(os.path, "isjunction", lambda _p: False)(path)
+
+
+def unlink_folder(link_id: str) -> None:
+    """Remove a link, never what it points to (a real folder there is left alone)."""
+    dest = FOLDERS / link_id
+    if dest.is_symlink():
+        dest.unlink()
+    elif _is_link(dest):
+        os.rmdir(dest)   # a junction: rmdir removes the junction itself
+
+
+def scan_link(link_id: str, path: str, subfolders: bool) -> Optional[List[str]]:
+    """The linked folder's pictures as names, or None when the folder can't be found. A link
+    that's gone while its folder is still there (a restored backup, another computer) is made again."""
+    dest = FOLDERS / link_id
+    if not _is_link(dest) and not dest.exists() and Path(path).expanduser().is_dir():
+        link_folder(path, link_id)
+    if not dest.is_dir():
+        return None
+    return [f"@{link_id}/{p.relative_to(dest).as_posix()}" for p in folder_pictures(dest, subfolders)]
+
+
+def prune_links(keep: Iterable[str]) -> None:
+    """Remove links no album uses any more."""
+    if not FOLDERS.is_dir():
+        return
+    keep = set(keep)
+    for entry in FOLDERS.iterdir():
+        if entry.name not in keep and _is_link(entry):
+            unlink_folder(entry.name)

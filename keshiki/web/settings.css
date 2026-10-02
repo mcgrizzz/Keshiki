@@ -130,6 +130,17 @@
 .combine-dialog .combine-list { display: flex; flex-direction: column; gap: 2px; max-height: 40vh; overflow-y: auto; }
 .combine-dialog .check { margin: 0; padding: 3px 0; }
 .combine-dialog .thumb { width: 48px; height: 30px; border-radius: 4px; background: var(--kiso-soft) center / cover; flex: none; }
+/* Folders: the path (shortened to its end, which names the folder). */
+.folder-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--kiso-muted); margin: 0; }
+.folder-line { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+.folder-line .folder-path { flex: 1; min-width: 0; }
+.folder-line .check { margin: 0; white-space: nowrap; }
+.folder-dialog .choices { display: flex; flex-direction: column; gap: 2px; }
+.folder-dialog .folder-count { margin: -10px 0 4px 26px; }
+.folder-dialog .check { margin-top: 0; }
+.folder-dialog .help.indent { margin: 0 0 6px 26px; }
+.folder-dialog .error:empty, .folder-missing:empty { display: none; }
+.position-dialog { width: min(520px, 92vw); }
 .image-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .image-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

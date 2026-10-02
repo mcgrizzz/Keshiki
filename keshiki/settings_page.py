@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 
-from . import library
+from . import folders, library
 from ._kiso import settings as kiso_settings
 from .config import ADDON_PACKAGE, DEFAULTS, SUN_MOMENTS, migrate, new_scene, validate
 from .schedule import build_look, day_anchors, light, screen_source, version_starts
@@ -55,12 +55,14 @@ class SettingsBridge(kiso_settings.Bridge):
     prefix = "keshiki:"
 
     def __init__(self, mw, renderer=None, *, close: Optional[Callable[[], None]] = None,
-                 pick_files: Callable[[], list] = lambda: [], open_folder: Callable[[Path], None] = lambda p: None,
+                 pick_files: Callable[[], list] = lambda: [], pick_folder: Callable[[], str] = lambda: "",
+                 open_folder: Callable[[Path], None] = lambda p: None,
                  in_background: Callable = lambda fn, done: done(fn()), eval_js: Callable[[str], None] = lambda js: None):
         super().__init__(close=close)
         self.mw = mw
         self.renderer = renderer
         self.pick_files = pick_files
+        self.pick_folder = pick_folder
         self.open_folder = open_folder
         # in_background(fn, done): run fn off the main thread, then done(fn's result
         # or exception) on it. eval_js reaches the page after the reply has gone.
@@ -71,9 +73,60 @@ class SettingsBridge(kiso_settings.Bridge):
         return migrate(self.mw.addonManager.getConfig(ADDON_PACKAGE) or {})[0]
 
     def op_state(self, _arg) -> dict:
-        return {"cfg": self.saved(), "defaults": migrate({})[0], "images": library.list_images(),
+        # Linked albums follow their folders: rescanned each time the settings open.
+        cfg = self.saved()
+        changed, missing = folders.refresh(cfg)
+        if changed:
+            self.mw.addonManager.writeConfig(ADDON_PACKAGE, cfg)
+            if self.renderer:
+                self.renderer.set_config(cfg)
+        self._thumbs(cfg)
+        return {"cfg": cfg, "defaults": migrate({})[0], "images": library.list_images(),
+                "linked": folders.pictures(cfg), "missing": missing,
                 "templates": {k: new_scene(k) for k in ("single", "day", "progress")},
                 "percent": self._percent(), "window": self._window_size()}
+
+    def _thumbs(self, cfg_or_names) -> None:
+        names = cfg_or_names if isinstance(cfg_or_names, list) else list(folders.pictures(cfg_or_names))
+        if names:
+            self.in_background(lambda: folders.make_thumbs(names), lambda _result: None)
+
+    # -- folders ----------------------------------------------------------
+
+    def op_pick_folder(self, _arg) -> str:
+        return self.pick_folder() or ""
+
+    def op_folder_info(self, arg) -> dict:
+        """How many pictures adding a folder would bring, for the page to say before it's added."""
+        try:
+            return {"count": len(library.folder_pictures(Path(arg["path"]), bool(arg.get("subfolders"))))}
+        except OSError as exc:
+            return {"error": str(exc)}
+
+    def op_add_folder(self, arg) -> dict:
+        """An album of a folder's pictures: linked (it follows the folder) or copied now."""
+        path, subfolders = arg["path"], bool(arg.get("subfolders"))
+        name = Path(path).name or "Album"
+        try:
+            if arg.get("mode") == "copy":
+                names = library.import_files([str(p) for p in library.folder_pictures(Path(path), subfolders)])
+                return {"scene": new_scene("album", name=name, images=names), "images": library.list_images(),
+                        "linked": {}}
+            link = library.link_folder(path)
+            names = library.scan_link(link, path, subfolders) or []
+        except OSError as exc:
+            return {"error": f"Couldn't add that folder: {exc}"}
+        scene = new_scene("album", name=name, images=names)
+        scene["folder"] = {"path": path, "link": link, "subfolders": subfolders}
+        self._thumbs(names)
+        return {"scene": scene, "linked": {n: library.picture_info(n) for n in names}}
+
+    def op_rescan(self, folder) -> dict:
+        names = folders.scan(folder)
+        if names is None:
+            return {"missing": True}
+        self._thumbs(names)
+        return {"images": names, "linked": {n: library.picture_info(n) for n in names}}
 
     def _window_size(self) -> list:
         """The main area's shape, so the image picker can show what it will crop."""
@@ -90,6 +143,7 @@ class SettingsBridge(kiso_settings.Bridge):
         if errors:
             return {"errors": errors}
         self.mw.addonManager.writeConfig(ADDON_PACKAGE, cfg)
+        library.prune_links(folders.links_in_use(cfg))   # folders no album links any more
         if self.renderer:
             self.renderer.preview = None
             self.renderer.set_config(cfg)
@@ -231,10 +285,14 @@ def make_dialog(mw, renderer):
                 dlg, "Add background images", "", "Images (" + " ".join("*" + e for e in library.EXTENSIONS) + ")")
             return paths
 
+        def pick_folder():
+            return QFileDialog.getExistingDirectory(dlg, "Add a folder of pictures")
+
         def in_background(fn, done):
             mw.taskman.run_in_background(fn, lambda future: done(future.result()))
 
-        return SettingsBridge(mw, renderer, pick_files=pick_files, open_folder=lambda p: openFolder(str(p)),
+        return SettingsBridge(mw, renderer, pick_files=pick_files, pick_folder=pick_folder,
+                              open_folder=lambda p: openFolder(str(p)),
                               in_background=in_background, eval_js=lambda js: web.eval(js))
 
     def finished():

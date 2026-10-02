@@ -56,7 +56,7 @@ Background scenes for Anki's main window that follow the sun through the day, an
 * **Day cycles.** Give a scene dawn, day, dusk and night versions. Each fades in between moments of the sun you choose (first light to sunrise, say), at a set time, or once the one before it is fully in, for the real sun where you are or the times you set.
 * **Light by the sun.** Optionally colour any picture by the sun's height: warm low sun, plain midday, blue twilight and a dim night. At night a picture's own lights (lit windows, lamps, stars) stay lit and glow softly.
 * **All done for today.** Different scenes once nothing is left to study in any deck.
-* **Albums and shuffle.** Add a batch of pictures and they become an album; on a screen its pictures take turns, every 15 minutes up to once a day. A screen with a single scene keeps it.
+* **Albums and shuffle.** Add a batch of pictures, or a whole folder (it can stay in step as you add to it), and they become an album; on a screen its pictures take turns, every 15 minutes up to once a day.
 * **Readable.** Dim and blur set separately for the deck list and for studying.
 
 After installing, restart Anki and open **Tools → 🖼️ Keshiki**. Your location is only looked up if you click **Find my location**.

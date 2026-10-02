@@ -4,6 +4,7 @@
    what the main window will. */
 
 let images = [];       // the image library
+let linked = {};       // linked folders' pictures (not in the library): name -> {url, thumb}
 let sel = null;        // selected scene id on the Scenes page
 let scrub = null;      // scene editor position: minutes of day or percent done
 
@@ -30,9 +31,15 @@ Object.assign(ICONS, {
 });
 
 const sceneById = (id) => draft.scenes.find((s) => s.id === id);
-const imageUrl = (name) => (images.find((i) => i.name === name) || {}).url;
-const thumbUrl = (name) => (images.find((i) => i.name === name) || {}).thumb;
+const pictureInfo = (name) => images.find((i) => i.name === name) || linked[name] || {};
+const imageUrl = (name) => pictureInfo(name).url;
+const thumbUrl = (name) => pictureInfo(name).thumb;
 const bg = (url) => (url ? { backgroundImage: `url("${url}")` } : {});
+// A long folder path, shortened to its last two parts (the full path goes in a tooltip).
+const shortPath = (path) => {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  return parts.length > 2 ? `…${path.includes("\\") ? "\\" : "/"}${parts.slice(-2).join(path.includes("\\") ? "\\" : "/")}` : path;
+};
 
 function hhmm(minutes) {
   const m = ((Math.round(minutes) % 1440) + 1440) % 1440;
@@ -188,6 +195,7 @@ function scenesPage() {
       h("div", {},
         h("div", { className: "list-actions" },
           h("button", { type: "button", onclick: () => addImagesAsScenes() }, "Add images..."),
+          h("button", { type: "button", id: "addFolder", onclick: () => askFolder() }, "Add folder..."),
           h("button", { type: "button", onclick: () => addScene("day") }, "New day cycle"),
           singles.length > 1 && h("button", { type: "button", id: "combine", title: "Put single pictures in one album",
                                               onclick: () => askCombine(singles) }, "Combine pictures...")),
@@ -211,6 +219,65 @@ async function addImagesAsScenes() {
   if (!draft.screens.main.scenes.length) draft.screens.main.scenes.push(scene.id);
   sel = scene.id;
   albumShown = 0;
+  changed(true);
+}
+
+// A folder becomes an album: linked (it keeps in step with the folder, rescanned when Anki
+// starts and the settings open) or copied now (it stays as it is).
+async function askFolder() {
+  const path = await call("pick_folder");
+  if (!path) return;
+  let subfolders = true;
+  let mode = "link";
+  const count = h("p", { className: "help folder-count" });
+  const error = h("p", { className: "error folder-error" });
+  const go = h("button", { type: "button", className: "primary", id: "addFolderGo", disabled: true, onclick: async () => {
+    go.disabled = true;
+    const res = await call("add_folder", { path, subfolders, mode });
+    if (!res || res.error) { error.textContent = (res && res.error) || "Couldn't add that folder."; go.disabled = false; return; }
+    closeModal();
+    if (res.images) images = res.images;
+    Object.assign(linked, res.linked);
+    draft.scenes.push(res.scene);
+    if (!draft.screens.main.scenes.length) draft.screens.main.scenes.push(res.scene.id);
+    sel = res.scene.id;
+    albumShown = 0;
+    page = "scenes";
+    changed(true);
+  } }, "Add");
+  const recount = async () => {
+    const res = await call("folder_info", { path, subfolders });
+    const n = (res && res.count) || 0;
+    count.textContent = res && res.error ? res.error : `${n} picture${n === 1 ? "" : "s"}`;
+    go.disabled = !n;
+  };
+  openModal(h("div", { className: "dialog small folder-dialog" },
+    h("h2", {}, "Add a folder"),
+    h("p", { className: "folder-path", title: path }, shortPath(path)),
+    h("label", { className: "check" },
+      h("input", { type: "checkbox", id: "folderSubfolders", checked: subfolders,
+                   onchange: (e) => { subfolders = e.target.checked; recount(); } }), "Include subfolders"),
+    count,
+    h("div", { className: "choices" },
+      radio("folderMode", true, "Keep in step with the folder", () => { mode = "link"; }),
+      h("p", { className: "help indent" }, "Pictures you add, change or remove there show up here the next time Anki starts or these settings open."),
+      radio("folderMode", false, "Copy the pictures now", () => { mode = "copy"; }),
+      h("p", { className: "help indent" }, "The album stays as it is, even if the folder changes or goes away.")),
+    error,
+    h("div", { className: "dialog-foot" }, h("button", { type: "button", onclick: closeModal }, "Cancel"), go)));
+  recount();
+}
+
+async function rescanFolder(scene) {
+  const res = await call("rescan", scene.folder);
+  if (!res) return;
+  S.missing = S.missing.filter((id) => id !== scene.id);
+  if (res.missing) S.missing.push(scene.id);
+  else {
+    Object.assign(linked, res.linked);
+    scene.versions = res.images.map((image) => ({ label: "", image }));
+    albumShown = Math.min(albumShown, Math.max(0, scene.versions.length - 1));
+  }
   changed(true);
 }
 
@@ -328,6 +395,7 @@ const timed = (scene) => scene.kind === "day" || scene.kind === "progress";
 // (to place or replace it), × takes it out, and the last tile adds more.
 let albumShown = 0;
 function albumGrid(scene, preview) {
+  const folder = scene.folder;
   const tiles = scene.versions.map((v, i) => h("div", { className: "album-tile" + (i === albumShown ? " shown" : "") },
     h("button", { type: "button", className: "pick" + (v.image ? "" : " empty"), style: bg(thumbUrl(v.image)),
                   title: v.image, "aria-label": `Picture ${v.image}`,
@@ -335,18 +403,29 @@ function albumGrid(scene, preview) {
                     albumShown = i;
                     for (const t of document.querySelectorAll(".album-tile")) t.classList.toggle("shown", t === tiles[i]);
                     updateScenePreview(preview, false);
-                    pickImage(v.image, (name) => { v.image = name; changed(true); });
+                    if (folder) pickImage(v.image, () => {}, null, -1, { positionOnly: true });
+                    else pickImage(v.image, (name) => { v.image = name; changed(true); });
                   } }, v.image ? "" : "+"),
-    h("button", { type: "button", className: "icon-only remove", title: "Take it out of the album", "aria-label": `Remove ${v.image}`,
+    !folder && h("button", { type: "button", className: "icon-only remove", title: "Take it out of the album", "aria-label": `Remove ${v.image}`,
                   onclick: () => {
                     scene.versions.splice(i, 1);
                     albumShown = Math.max(0, Math.min(albumShown, scene.versions.length - 1));
                     changed(true);
                   } }, icon("close"))));
   return h("div", { className: "album-wrap" },
-    h("p", { className: "help" }, "On a screen, the album's pictures take turns with its other scenes, one each time its shuffle changes."),
+    folder && h("div", { className: "folder-line" },
+      h("span", { className: "folder-path", title: folder.path }, shortPath(folder.path)),
+      h("label", { className: "check" },
+        h("input", { type: "checkbox", id: "albumSubfolders", checked: !!folder.subfolders,
+                     onchange: (e) => { folder.subfolders = e.target.checked; rescanFolder(scene); } }), "Include subfolders"),
+      h("button", { type: "button", className: "link", id: "rescan", onclick: () => rescanFolder(scene) }, "Rescan now")),
+    folder && (S.missing || []).includes(scene.id)
+      && h("p", { className: "error folder-missing" }, "Can't find this folder (moved, renamed, or a drive that isn't connected). Showing its last pictures."),
+    h("p", { className: "help" }, folder
+      ? "Kept in step with the folder: add, change or remove pictures there. On a screen they take turns with its other scenes."
+      : "On a screen, the album's pictures take turns with its other scenes, one each time its shuffle changes."),
     h("div", { className: "album" }, ...tiles,
-      h("button", { type: "button", className: "album-add", onclick: () => addImagesToAlbum(scene) }, "+ Add images...")));
+      !folder && h("button", { type: "button", className: "album-add", onclick: () => addImagesToAlbum(scene) }, "+ Add images...")));
 }
 
 function versionTable(scene, preview) {
@@ -679,7 +758,7 @@ function updateScenePreview(preview, redrawRibbon) {
 // up: one position (the part of each picture kept in view) for all of them, so they
 // match through the fades. Positions belong to pictures (draft.images), so lining up
 // writes the same position to each. scene.aligned === false: the user turned it off.
-function pickImage(current, use, scene = null, index = -1) {
+function pickImage(current, use, scene = null, index = -1, { positionOnly = false } = {}) {
   let chosen = current || (images[0] && images[0].name) || null;
   const grid = h("div", { className: "grid" });
   const side = h("div", {});
@@ -805,6 +884,14 @@ function pickImage(current, use, scene = null, index = -1) {
                   onclick: () => { chosen = img.name; drawGrid(); drawSide(); },
                   ondblclick: () => choose(img.name) })));
 
+  if (positionOnly) {
+    openModal(h("div", { className: "dialog position-dialog" },
+      h("div", { className: "dialog-head" }, h("h2", {}, "The part that stays in view")),
+      side,
+      h("div", { className: "dialog-foot" }, h("button", { type: "button", className: "primary", onclick: closeModal }, "Done"))));
+    drawSide();
+    return;
+  }
   openModal(h("div", { className: "dialog" },
     h("div", { className: "dialog-head" }, h("h2", {}, "Choose an image"),
       h("button", { type: "button", onclick: async () => {
@@ -985,6 +1072,8 @@ Kiso.setup({
     S.window = S.window || [16, 10];
     document.documentElement.style.setProperty("--kk-window", String(S.window[0] / S.window[1]));
     images = state.images;
+    linked = state.linked || {};
+    S.missing = state.missing || [];
   },
   // Unsaved edits preview live in the main window (and in the page's own previews).
   onChange: (dirty) => {

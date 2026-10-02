@@ -383,6 +383,76 @@ def check(app, shots, base):
     run_js(dlg, "byText('#nav button', 'Screens').click()")
     print("PASS: single pictures combine into an album on the Scenes page, in place on the screens that showed them.")
 
+    # A folder as an album, linked: its pictures are read from the folder through a link,
+    # served by Anki's media server, and follow the folder on a rescan.
+    from keshiki.keshiki import library
+    wall = base / "Wallpapers"
+    (wall / "trip").mkdir(parents=True)
+    for name, hue in (("lake.png", 100), ("hills.png", 40), ("trip/coast.png", 190)):
+        make_test_image(wall / name, hue)
+    dlg.kiso_bridge.pick_folder = lambda: str(wall)
+    run_js(dlg, "byText('#nav button', 'Scenes').click()")
+    run_js(dlg, "$('#addFolder').click()")
+    until(app, lambda: run_js(dlg, "($('.folder-count') || {}).textContent") == "3 pictures", 5, "the folder dialog didn't count")
+    run_js(dlg, "$('#folderSubfolders').click()")
+    until(app, lambda: run_js(dlg, "$('.folder-count').textContent") == "2 pictures", 5, "subfolders didn't change the count")
+    run_js(dlg, "$('#folderSubfolders').click()")
+    until(app, lambda: run_js(dlg, "$('.folder-count').textContent") == "3 pictures", 5)
+    shoot(dlg, "folder-dialog")
+    run_js(dlg, "$('#addFolderGo').click()")
+    album = "draft.scenes.find(s => s.name === 'Wallpapers')"
+    until(app, lambda: run_js(dlg, f"!!{album}"), 5, "the folder didn't become an album")
+    link = run_js(dlg, f"{album}.folder.link")
+    assert run_js(dlg, f"{album}.versions.map(v => v.image)") == [f"@{link}/hills.png", f"@{link}/lake.png",
+                                                                  f"@{link}/trip/coast.png"]
+    assert (library.FOLDERS / link).is_symlink(), "no link to the folder"
+    until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 3, 5)
+    run_js(dlg, f"(() => {{ window._st = null; fetch(imageUrl({album}.versions[2].image))"
+                ".then(r => { window._st = r.status; }); })()")
+    until(app, lambda: run_js(dlg, "window._st") is not None, 5)
+    assert run_js(dlg, "window._st") == 200, "Anki's media server didn't serve the linked picture"
+    assert run_js(dlg, "!$('.album-tile .remove') && !$('.album-add')"), "a folder's pictures are managed in the folder"
+    make_test_image(wall / "dunes.png", 30)
+    run_js(dlg, "$('#rescan').click()")
+    until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 4, 5, "Rescan didn't pick up the new picture")
+    run_js(dlg, "$('#albumSubfolders').click()")
+    until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 3, 5, "subfolders stayed in")
+    shoot(dlg, "folder-album")
+    # A folder that's gone keeps its last pictures and says so.
+    wall.rename(base / "Wallpapers-away")
+    run_js(dlg, "$('#rescan').click()")
+    until(app, lambda: run_js(dlg, "!!$('.folder-missing')"), 5, "no warning for a missing folder")
+    assert run_js(dlg, "$$('.album-tile').length") == 3
+    (base / "Wallpapers-away").rename(wall)
+    run_js(dlg, "$('#rescan').click()")
+    until(app, lambda: run_js(dlg, "!$('.folder-missing')"), 5)
+    # Saved, the link stays; the album deleted and saved, the link goes and the folder stays whole.
+    run_js(dlg, "$('#save').click()")
+    until(app, lambda: run_js(dlg, "$('#status').textContent") == "Saved", 5)
+    assert (library.FOLDERS / link).is_symlink()
+    run_js(dlg, "byText('.scene-item span', 'Wallpapers').parentElement.click()")
+    run_js(dlg, "$('#deleteScene').click()")
+    until(app, lambda: run_js(dlg, "!!$('#confirmYes')"), 5)
+    run_js(dlg, "$('#confirmYes').click()")
+    run_js(dlg, "$('#save').click()")
+    until(app, lambda: run_js(dlg, "$('#status').textContent") == "Saved", 5)
+    assert not (library.FOLDERS / link).exists(), "the unused link stayed"
+    assert sorted(p.name for p in wall.rglob("*.png")) == ["coast.png", "dunes.png", "hills.png", "lake.png"]
+    print("PASS: a linked folder's pictures are served live, follow rescans, survive a missing folder, "
+          "and dropping the album removes only the link.")
+
+    # A folder copied once: an ordinary album of the copied pictures.
+    run_js(dlg, "$('#addFolder').click()")
+    until(app, lambda: run_js(dlg, "($('.folder-count') || {}).textContent") == "4 pictures", 5)
+    run_js(dlg, "byText('label', 'Copy the pictures now').querySelector('input').click(); $('#addFolderGo').click()")
+    until(app, lambda: run_js(dlg, f"!!{album}"), 5, "the copied folder didn't become an album")
+    assert run_js(dlg, f"!{album}.folder && {album}.versions.every(v => !v.image.startsWith('@'))")
+    assert {"lake.png", "coast.png"} <= {p.name for p in library.IMAGES.iterdir()}
+    run_js(dlg, "$('#cancel').click()")
+    until(app, lambda: run_js(dlg, f"!{album}"), 5)
+    run_js(dlg, "byText('#nav button', 'Screens').click()")
+    print("PASS: a folder copied once becomes an ordinary album.")
+
     # Cancel drops unsaved edits and keeps the window open.
     run_js(dlg, "setv($$('input[aria-label=Blur]')[0], '12')")
     until(app, lambda: run_js(dlg, "!$('#cancel').disabled"), 5)

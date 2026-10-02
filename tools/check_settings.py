@@ -154,6 +154,18 @@ def check(app, shots, base):
     run_js(dlg, "setv($('.editor .name'), 'Day cycle')")
     print("PASS: long scene names are cut short, and Delete scene is on the name's line.")
 
+    # A set time's clock wraps under its dropdown instead of widening every row off the panel.
+    run_js(dlg, "byText('button', '+ Add version').click()")
+    until(app, lambda: run_js(dlg, "$$('.version').length") == 5, 5)
+    run_js(dlg, "setv($$('.version')[4].querySelector('select'), 'clock')")
+    until(app, lambda: run_js(dlg, "!!$('.version input[type=time]')"), 5, "no clock for a set time")
+    overflow = run_js(dlg, "Math.max(...$$('.versions *').map(e => e.getBoundingClientRect().right))"
+                           " - $('.versions').getBoundingClientRect().right")
+    assert overflow <= 0, f"versions table overflows by {overflow}px with a set time"
+    run_js(dlg, "$$('.version')[4].querySelector('[aria-label=\"Remove version\"]').click()")
+    until(app, lambda: run_js(dlg, "$$('.version').length") == 4, 5)
+    print("PASS: a version at a set time keeps the versions table inside the panel.")
+
     # Delete scene asks first, with focus on the safe answer; No keeps the scene.
     count = run_js(dlg, "draft.scenes.length")
     run_js(dlg, "$('#deleteScene').click()")
@@ -164,6 +176,9 @@ def check(app, shots, base):
     # A confirmation stacks over the picture picker; Esc takes off only the top one.
     run_js(dlg, "$$('.version .pick')[0].click()")
     until(app, lambda: run_js(dlg, "!!$('.tile')"), 5)
+    assert run_js(dlg, """(() => { const b = $('.ribbon').getBoundingClientRect();
+        return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2).closest('.overlay') !== null; })()"""), \
+        "the timeline takes clicks through the picture picker"
     run_js(dlg, "confirmDialog({ title: 'Stacked?' })")
     assert run_js(dlg, "$$('#modal .overlay').length") == 2
     run_js(dlg, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")

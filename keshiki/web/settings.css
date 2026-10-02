@@ -60,7 +60,7 @@
                     background: #000a; color: #fff; font-variant-numeric: tabular-nums; }
 
 /* The ribbon: the scene's own images laid along the day (or along a study session). */
-.ribbon { position: relative; height: 34px; margin-top: 10px; border-radius: 5px; overflow: hidden; background: var(--kiso-soft); }
+.ribbon { position: relative; isolation: isolate; height: 34px; margin-top: 10px; border-radius: 5px; overflow: hidden; background: var(--kiso-soft); }
 .ribbon .seg { position: absolute; top: 0; bottom: 0; background: center / cover; }
 .ribbon input[type=range] { z-index: 101; position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: ew-resize; }
 .ribbon .hand { position: absolute; z-index: 100; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: #fff;
@@ -72,8 +72,10 @@
 .ticks span:first-child { transform: none; }
 .ticks span:last-child { transform: translateX(-100%); }
 
-.versions { display: grid; grid-template-columns: 64px minmax(80px, 1fr) auto auto 28px; gap: 4px 10px;
+/* Starts is as wide as its dropdown: a set time's clock wraps beneath it instead of widening every row. */
+.versions { display: grid; grid-template-columns: 64px minmax(80px, 1fr) fit-content(220px) auto 28px; gap: 4px 10px;
             align-items: center; margin-top: 12px; }
+.versions .unit { flex-wrap: wrap; }
 .versions.single { grid-template-columns: 64px minmax(0, 1fr) auto; }
 .vhead, .version { display: contents; }
 .vhead span { font-size: 12px; color: var(--kiso-muted); padding-bottom: 2px; }

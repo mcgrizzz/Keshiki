@@ -30,6 +30,10 @@ def check(app, shots, base):
     until(app, lambda: all(background_on(app, w) for w in webs), 10, "no background to start with")
 
     old = addon().addon.feature
+    # What Anki's media server may serve is registered again: an older pattern (from before
+    # linked folders, say) doesn't outlive the reload.
+    from keshiki.keshiki import library
+    mw.addonManager.setWebExports("keshiki", r"user_files/(images|thumbs)/.+")
     # Mark the pages: the reload redraws them, and the old ones already show a background.
     for web in webs:
         js(app, web, "window.kkBeforeReload = true")
@@ -43,7 +47,8 @@ def check(app, shots, base):
     stages = "document.querySelectorAll('.keshiki-stage').length"
     until(app, lambda: js(app, mw.web, stages) == 1, 5,
           f"one stage per page after the reload, not {js(app, mw.web, stages)}")
-    print("PASS: reload_addon swaps in the code on disk and redraws the window.")
+    assert mw.addonManager.getWebExports("keshiki") == library.WEB_EXPORTS, mw.addonManager.getWebExports("keshiki")
+    print("PASS: reload_addon swaps in the code on disk, registers what it serves, and redraws the window.")
 
     mw.addonManager.toggleEnabled("keshiki", False)
     until(app, lambda: not any(background_on(app, w) for w in webs), 10, "background stayed after turning off")

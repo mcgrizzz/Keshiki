@@ -12,7 +12,6 @@ except ImportError:   # imported outside Anki (tests)
 addon = None
 
 if mw is not None:
-    from .keshiki import library
     from .keshiki._kiso.addon import Addon
 
     def _start():
@@ -35,6 +34,11 @@ if mw is not None:
         if a.feature:
             a.feature.set_enabled(enabled)
 
+    def _web_exports():
+        # Read at each reload: new code may serve more of user_files (linked folders, say).
+        from .keshiki import library
+        return library.WEB_EXPORTS
+
     def _redraw(_a):
         # Pages carry the old layer code; redraw them.
         from .keshiki._kiso.ui import rebuild_main_window
@@ -44,7 +48,7 @@ if mw is not None:
     # page renders, so the first deck list already has its background.
     addon = Addon(__name__, inner="keshiki", start=_start, stop=lambda r: r.teardown(),
                   settings=_settings, menu="🖼️ Keshiki", on_config=_config,
-                  on_toggle=_toggled, after_reload=_redraw, web_exports=library.WEB_EXPORTS)
+                  on_toggle=_toggled, after_reload=_redraw, web_exports=_web_exports)
     addon.install()
 
 

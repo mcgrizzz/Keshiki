@@ -187,6 +187,37 @@ def check(app, shots, base):
     assert run_js(dlg, "!$('#modal').firstChild")
     print("PASS: deleting asks first, and a confirmation stacks over the picture picker.")
 
+    # Lining up a scene's pictures: one drag moves them all, until that's turned off.
+    run_js(dlg, "window._window = S.window; S.window = [2.4, 1]; "   # a wide window: every picture crops
+                "Element.prototype.setPointerCapture = () => {}")    # synthetic pointers can't be captured
+    drag = ("(() => { const b = $('.focus-box'), r = b.getBoundingClientRect(); "
+            "const ev = (t) => b.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerId: 1, "
+            "clientX: r.x + r.width / 2, clientY: r.y + r.height * %s })); ev('pointerdown'); ev('pointerup'); })()")
+    ys = "['dawn', 'day', 'dusk', 'night'].map(n => (draft.images[n + '.png'] || { y: 50 }).y)"
+    run_js(dlg, "$$('.version .pick')[1].click()")
+    until(app, lambda: run_js(dlg, "!!$('#alignPictures') && !$('.align').hidden"), 5, "no line-up option in the picker")
+    assert run_js(dlg, "$('#alignPictures').checked"), "untouched pictures aren't shown as lined up"
+    assert run_js(dlg, "$$('.mini').length") == 3
+    run_js(dlg, drag % "0.02")
+    assert run_js(dlg, ys) == [0, 0, 0, 0], run_js(dlg, ys)
+    until(app, lambda: run_js(dlg, "$$('.mini .crop-frame').every(f => f.style.top === '0%')"), 5,
+          "the small frames didn't follow")
+    shoot(dlg, "picker-aligned")
+    run_js(dlg, "$('#alignPictures').click()")
+    assert run_js(dlg, "draft.scenes.find(s => s.kind === 'day').aligned") is False
+    run_js(dlg, drag % "0.98")
+    assert run_js(dlg, ys) == [0, 100, 0, 0], run_js(dlg, ys)
+    run_js(dlg, "$('#modal .dialog-foot button').click()")
+    # Reopened: positions differ, so it isn't ticked; ticking lines the others up with this one.
+    run_js(dlg, "$$('.version .pick')[1].click()")
+    until(app, lambda: run_js(dlg, "!!$('#alignPictures')"), 5)
+    assert not run_js(dlg, "$('#alignPictures').checked"), "shown as lined up while the pictures differ"
+    run_js(dlg, "$('#alignPictures').click()")
+    assert run_js(dlg, ys) == [100, 100, 100, 100], run_js(dlg, ys)
+    assert run_js(dlg, "!('aligned' in draft.scenes.find(s => s.kind === 'day'))")
+    run_js(dlg, "$('#modal .dialog-foot button').click(); S.window = window._window")
+    print("PASS: a day cycle's pictures move together in the picker, and can be set apart.")
+
     # Use the day cycle while studying, then save.
     run_js(dlg, "byText('#nav button', 'Screens').click()")
     run_js(dlg, "byText('label', 'Scenes of its own').querySelector('input').click()")

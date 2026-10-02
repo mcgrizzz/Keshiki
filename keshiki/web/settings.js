@@ -275,11 +275,12 @@ function versionTable(scene, preview) {
   return table;
 }
 
-function pickButton(v) {
+function pickButton(v, scene = null, index = -1) {
   return h("button", { type: "button", className: "pick" + (v.image ? "" : " empty"), style: bg(thumbUrl(v.image)),
                        title: v.image ? `Change image (${v.image})` : "Choose image",
                        "aria-label": v.image ? `Change image (${v.image})` : "Choose image",
-                       onclick: () => pickImage(v.image, (name) => { v.image = name; changed(true); }) }, v.image ? "" : "+");
+                       onclick: () => pickImage(v.image, (name) => { v.image = name; changed(true); }, scene, index) },
+    v.image ? "" : "+");
 }
 
 // Where a version is fully in: its start plus its fade (it holds from there).
@@ -378,7 +379,7 @@ function versionRow(scene, v, i, preview) {
                       scrub = versionPosition(scene, v, i);
                       updateScenePreview(preview, false);
                     } },
-    pickButton(v),
+    pickButton(v, scene, i),
     h("input", { type: "text", className: "label", value: v.label, placeholder: "Name", "aria-label": "Version name",
                  oninput: (e) => { v.label = e.target.value; }, onchange: () => changed() }),
     starts, fade,
@@ -548,10 +549,36 @@ function updateScenePreview(preview, redrawRibbon) {
 
 // -- image picker ---------------------------------------------------------
 
-function pickImage(current, use) {
+// Opened from a version of a scene, the picker can keep the scene's pictures lined
+// up: one position (the part of each picture kept in view) for all of them, so they
+// match through the fades. Positions belong to pictures (draft.images), so lining up
+// writes the same position to each. scene.aligned === false: the user turned it off.
+function pickImage(current, use, scene = null, index = -1) {
   let chosen = current || (images[0] && images[0].name) || null;
   const grid = h("div", { className: "grid" });
   const side = h("div", {});
+  const CENTRE = { x: 50, y: 50 };
+  const where = (name) => draft.images[name] || CENTRE;
+  const same = (a, b) => a.x === b.x && a.y === b.y;
+  // The other versions' pictures: what moves with the chosen one.
+  const others = () => [...new Set((scene ? scene.versions : []).filter((_, j) => j !== index)
+    .map((v) => v.image).filter((name) => name && name !== chosen))];
+  const labelOf = (name) => (scene.versions.find((v) => v.image === name) || {}).label || name;
+  // Ticked only when it's true: the pictures already share one position.
+  let linked = !!scene && scene.aligned !== false && others().length > 0
+    && others().every((name) => same(where(name), where(current || others()[0])));
+  // Lined up, every picture shows the scene's position; otherwise each its own.
+  const focus = (name = chosen) => (linked && others().length ? where(others()[0]) : where(name));
+  const fitOf = (img) => {
+    const a = S.window[0] / S.window[1], i = img.naturalWidth / img.naturalHeight;
+    return i > a ? { w: a / i, h: 1 } : { w: 1, h: i / a };
+  };
+  const frameAt = (frame, img, f) => {
+    if (!img.naturalWidth) return;
+    const { w, h: fh } = fitOf(img);
+    Object.assign(frame.style, { left: f.x * (1 - w) + "%", top: f.y * (1 - fh) + "%",
+                                 width: 100 * w + "%", height: 100 * fh + "%" });
+  };
 
   const drawSide = () => {
     if (!chosen) { side.replaceChildren(h("p", { className: "help" }, "Add images to choose from.")); return; }
@@ -561,21 +588,51 @@ function pickImage(current, use) {
     const img = h("img", { src: imageUrl(chosen), alt: "", draggable: false });
     const box = h("div", { className: "focus-box" }, img, frame);
     const help = h("p", { className: "help" });
-    const focus = () => draft.images[chosen] || { x: 50, y: 50 };
-    const fit = () => {
-      const a = S.window[0] / S.window[1], i = img.naturalWidth / img.naturalHeight;
-      return i > a ? { w: a / i, h: 1 } : { w: 1, h: i / a };
-    };
+    const fit = () => fitOf(img);
+
+    // The scene's other pictures, small, each with its frame: they follow the drag while lined up.
+    const minis = others().map((name) => {
+      const mimg = h("img", { src: thumbUrl(name), alt: "", draggable: false });
+      const mframe = h("span", { className: "crop-frame" });
+      mimg.addEventListener("load", () => place());
+      return { name, img: mimg, frame: mframe,
+               el: h("div", { className: "mini-item", title: name },
+                 h("div", { className: "mini" }, mimg, mframe), h("span", { className: "mini-label" }, labelOf(name))) };
+    });
+    const shapeNote = h("p", { className: "help shape-note", hidden: true },
+      "These pictures have different shapes, so they line up only roughly.");
+    const toggle = h("input", { type: "checkbox", id: "alignPictures", checked: linked, onchange: (e) => {
+      linked = e.target.checked;
+      if (linked) {
+        // Line the others up with the picture in view.
+        const f = { ...where(chosen) };
+        for (const name of others()) draft.images[name] = { ...f };
+        delete scene.aligned;
+      } else scene.aligned = false;
+      changed();
+      place();
+    } });
+    const align = minis.length && h("div", { className: "align" },
+      h("label", { className: "check" }, toggle, "Keep the scene's pictures lined up"),
+      h("div", { className: "minis" }, ...minis.map((m) => m.el)),
+      shapeNote);
+
     const place = () => {
       if (!img.naturalWidth) return;
-      const { w, h: fh } = fit(), f = focus();
-      Object.assign(frame.style, { left: f.x * (1 - w) + "%", top: f.y * (1 - fh) + "%",
-                                   width: 100 * w + "%", height: 100 * fh + "%" });
+      const { w, h: fh } = fit();
+      frameAt(frame, img, focus());
       const crops = w < 0.995 || fh < 0.995;
       box.classList.toggle("fixed", !crops);
       help.textContent = crops
         ? "The frame is what Anki's window shows of this picture. Drag it, or click, to choose the part that stays in view."
         : "This picture has the same shape as Anki's window, so all of it shows.";
+      if (!align) return;
+      align.hidden = !crops;
+      align.classList.toggle("linked", linked);
+      for (const m of minis) frameAt(m.frame, m.img, linked ? focus() : where(m.name));
+      const ratio = img.naturalWidth / img.naturalHeight;
+      shapeNote.hidden = !minis.some((m) => m.img.naturalWidth
+        && Math.abs(m.img.naturalWidth / m.img.naturalHeight / ratio - 1) > 0.02);
     };
     img.addEventListener("load", place);
     // Click or drag: the frame's centre follows the pointer, kept inside the picture.
@@ -583,7 +640,8 @@ function pickImage(current, use) {
       const r = box.getBoundingClientRect(), { w, h: fh } = fit();
       const axis = (pos, size, span) => (span >= 0.995 ? 50
         : Math.round((100 * Math.min(Math.max(pos / size - span / 2, 0), 1 - span)) / (1 - span)));
-      draft.images[chosen] = { x: axis(e.clientX - r.left, r.width, w), y: axis(e.clientY - r.top, r.height, fh) };
+      const f = { x: axis(e.clientX - r.left, r.width, w), y: axis(e.clientY - r.top, r.height, fh) };
+      for (const name of linked ? [chosen, ...others()] : [chosen]) draft.images[name] = { ...f };
       place();
     };
     box.addEventListener("pointerdown", (e) => {
@@ -594,7 +652,7 @@ function pickImage(current, use) {
     });
     box.addEventListener("pointerup", () => { box.onpointermove = null; changed(); });
     const used = draft.scenes.some((sc) => sc.versions.some((v) => v.image === chosen));
-    side.replaceChildren(box, help,
+    side.replaceChildren(box, help, align || "",
       h("div", { className: "image-meta" }, h("span", { className: "muted", title: chosen }, chosen),
         used ? h("span", { className: "muted" }, "Used by a scene")
           : h("button", { type: "button", className: "link danger", id: "deleteImage", onclick: async () => {
@@ -609,11 +667,17 @@ function pickImage(current, use) {
             } }, "Delete image")));
     place();
   };
+  // Choosing a picture while lined up gives it the scene's position.
+  const choose = (name) => {
+    closeModal();
+    if (linked && others().length && draft.images[others()[0]]) draft.images[name] = { ...draft.images[others()[0]] };
+    use(name);
+  };
   const drawGrid = () => grid.replaceChildren(...images.map((img) =>
     h("button", { type: "button", className: "tile", style: bg(img.thumb), title: img.name, "aria-label": img.name,
                   "aria-pressed": img.name === chosen ? "true" : "false",
                   onclick: () => { chosen = img.name; drawGrid(); drawSide(); },
-                  ondblclick: () => { closeModal(); use(img.name); } })));
+                  ondblclick: () => choose(img.name) })));
 
   openModal(h("div", { className: "dialog" },
     h("div", { className: "dialog-head" }, h("h2", {}, "Choose an image"),
@@ -628,7 +692,8 @@ function pickImage(current, use) {
     h("div", { className: "picker" }, grid, side),
     h("div", { className: "dialog-foot" },
       h("button", { type: "button", onclick: closeModal }, "Cancel"),
-      h("button", { type: "button", className: "primary", onclick: () => { closeModal(); if (chosen) use(chosen); } }, "Use image"))));
+      h("button", { type: "button", className: "primary", onclick: () => { if (chosen) choose(chosen); else closeModal(); } },
+        "Use image"))));
   drawGrid(); drawSide();
 }
 

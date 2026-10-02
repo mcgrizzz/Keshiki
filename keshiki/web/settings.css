@@ -102,6 +102,17 @@
 .crop-frame { position: absolute; box-sizing: border-box; border: 2px solid #fff; border-radius: 3px;
               box-shadow: 0 0 0 1px #0008, 0 0 0 9999px #0008; pointer-events: none; }
 .focus-box.fixed .crop-frame { display: none; }
+/* Lining up a scene's pictures: the others, small, their frames following the drag. */
+.align { display: flex; flex-direction: column; gap: 6px; margin: 2px 0 10px; }
+.align .check { margin: 0; }
+.minis { display: flex; flex-wrap: wrap; gap: 6px; }
+.mini-item { display: flex; flex-direction: column; gap: 2px; width: 64px; opacity: 0.55; transition: opacity 0.15s; }
+.align.linked .mini-item { opacity: 1; }
+.mini { position: relative; border-radius: 4px; overflow: hidden; }
+.mini-label { font-size: 11px; color: var(--kiso-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini img { display: block; width: 100%; pointer-events: none; }
+.mini .crop-frame { border-width: 1.5px; border-radius: 2px; }
+.shape-note { margin: 0; }
 .image-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .image-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

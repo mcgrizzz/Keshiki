@@ -152,6 +152,29 @@ def test_the_template_day_cycle_follows_the_sun():
     assert images(compose(scene, 1 * 60, anchors)) == [("night", 1.0)]
 
 
+def test_a_version_can_start_when_the_one_above_is_fully_in():
+    anchors = day_anchors({"source": "manual", "sunrise": "06:30", "sunset": "19:30"})
+    scene = new_scene("day")
+    for v, name in zip(scene["versions"], ["dawn", "day", "dusk", "night"], strict=True):
+        v["image"] = name
+    # Midnight waits 15 minutes after Night is fully in, then fades in over 30; Late follows it.
+    scene["versions"] += [{"label": "Midnight", "image": "midnight", "anchor": "after", "offset": 15, "fade": 30},
+                          {"label": "Gap", "image": "", "anchor": "after", "offset": 60, "fade": 0},
+                          {"label": "Late", "image": "late", "anchor": "after", "offset": 10, "fade": 20}]
+    starts = {v["image"]: (start, fade) for start, fade, v in version_starts(scene, anchors)}
+    night_full = sum(starts["night"])
+    assert starts["midnight"] == (night_full + 15, 30)
+    # A version without a picture yet still holds its place in the chain.
+    assert starts["late"] == ((night_full + 15 + 30 + 60 + 10) % 1440, 20)
+    # It follows the sun with Night: a later sunset moves it too.
+    later = day_anchors({"source": "manual", "sunrise": "06:30", "sunset": "20:30"})
+    moved = {v["image"]: start for start, _fade, v in version_starts(scene, later)}
+    assert moved["midnight"] - starts["midnight"][0] > 30
+    # The first version has nothing above it: it counts from midnight.
+    first = {"kind": "day", "versions": [{"image": "a", "anchor": "after", "offset": 20, "fade": 5}]}
+    assert version_starts(first, anchors)[0][:2] == (20, 5)
+
+
 def test_grade_runs_from_no_change_to_matching_the_other_picture():
     dark = {"mean": [0.2, 0.2, 0.3], "std": [0.1, 0.1, 0.1]}
     warm = {"mean": [0.7, 0.5, 0.3], "std": [0.15, 0.1, 0.05]}

@@ -139,27 +139,42 @@ def day_anchors(day_cfg: dict, sun: Optional[Tuple[int, int, List[float]]] = Non
 
 
 def version_starts(scene: dict, anchors: Dict[str, int]) -> List[Tuple[float, float, dict]]:
-    """(start, fade, version) for the versions that have an image, sorted by start."""
+    """(start, fade, version) for the versions that have an image, sorted by start.
+
+    A day version can start when the one above it is fully in, `offset` minutes
+    later (anchor "after"), so times are worked out in list order, versions without
+    an image included: the chain holds while a picture is still to be chosen."""
     marks = []
+    above_full = None   # when the version above is fully in (a day scene)
     for v in scene.get("versions") or []:
-        if not v.get("image"):
-            continue
-        if scene.get("kind") == "day" and v.get("anchor") == "sun" and anchors.get("curve"):
-            rising = v.get("direction", "rising") == "rising"
-            start = crossing(anchors["curve"], _num(v.get("from")), rising)
-            full = crossing(anchors["curve"], _num(v.get("to")), rising)
-            marks.append((start, (full - start) % DAY, v))
-            continue
+        start, fade = _start_and_fade(scene, v, anchors, above_full)
         if scene.get("kind") == "day":
-            base = 0 if v.get("anchor") == "clock" else anchors.get(v.get("anchor"), 0)
-            start = (base + _num(v.get("offset"))) % DAY
-        elif scene.get("kind") == "progress":
-            start = min(max(_num(v.get("at")), 0), 100)
-        else:
-            start = 0
-        marks.append((start, max(_num(v.get("fade")), 0), v))
+            above_full = (start + fade) % DAY
+        if v.get("image"):
+            marks.append((start, fade, v))
     marks.sort(key=lambda m: m[0])
     return marks
+
+
+def _start_and_fade(scene: dict, v: dict, anchors: Dict[str, int], above_full: Optional[float]) -> Tuple[float, float]:
+    kind = scene.get("kind")
+    if kind == "day" and v.get("anchor") == "sun" and anchors.get("curve"):
+        rising = v.get("direction", "rising") == "rising"
+        start = crossing(anchors["curve"], _num(v.get("from")), rising)
+        full = crossing(anchors["curve"], _num(v.get("to")), rising)
+        return start, (full - start) % DAY
+    if kind == "day":
+        if v.get("anchor") == "after":
+            base = above_full or 0   # the first version has nothing above: midnight
+            start = (base + max(_num(v.get("offset")), 0)) % DAY
+        else:
+            base = 0 if v.get("anchor") == "clock" else anchors.get(v.get("anchor"), 0)
+            start = (base + _num(v.get("offset"))) % DAY
+    elif kind == "progress":
+        start = min(max(_num(v.get("at")), 0), 100)
+    else:
+        start = 0
+    return start, max(_num(v.get("fade")), 0)
 
 
 def compose(scene: Optional[dict], position: float, anchors: Dict[str, int]) -> List[dict]:

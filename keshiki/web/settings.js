@@ -267,8 +267,10 @@ function versionTable(scene, preview) {
     scene.versions.map((v, i) => versionRow(scene, v, i, preview)));
   table.append(h("button", { type: "button", className: "add-version", onclick: () => {
     const last = scene.versions[scene.versions.length - 1] || {};
+    // A new day version follows the last one: it starts as that one is fully in.
     scene.versions.push(day
-      ? { label: "", image: "", anchor: "sun", direction: "setting", from: 0, to: -6 }
+      ? (scene.versions.length ? { label: "", image: "", anchor: "after", offset: 0, fade: 30 }
+        : { label: "", image: "", anchor: "sun", direction: "setting", from: 0, to: -6 })
       : { label: "", image: "", at: Math.min(100, (Number(last.at) || 0) + 10), fade: 10 });
     changed(true);
   } }, "+ Add version"));
@@ -329,6 +331,10 @@ function versionRow(scene, v, i, preview) {
   let starts, fade;
   if (scene.kind === "day") {
     const clock = v.anchor === "clock";
+    // "after": starts when the version above is fully in, plus a wait (v.offset); not for the first row.
+    const above = i > 0 ? scene.versions[i - 1] : null;
+    const follows = v.anchor === "after" && !!above;
+    const sun = !clock && !follows;
     const direction = v.direction || "rising";
     const from = Number(v.from), to = Number(v.to);
     // Later in its half of the day: higher in the morning, lower in the evening (noon starts the evening).
@@ -339,6 +345,12 @@ function versionRow(scene, v, i, preview) {
         if (e.target.value === "clock") {
           // Keep today's times when moving from the sun to the clock.
           Object.assign(v, { anchor: "clock", offset: Math.round(mark ? mark.start : 0), fade: Math.round(mark ? mark.fade : 30) });
+          delete v.direction; delete v.from; delete v.to;
+        } else if (e.target.value === "after") {
+          // Keep today's times too: the wait is the gap there is now (none if it starts before).
+          const prev = (S.marks || []).find((m) => m.index === i - 1);
+          const gap = prev && mark ? (((mark.start - prev.start - prev.fade) % 1440) + 1440) % 1440 : 0;
+          Object.assign(v, { anchor: "after", offset: Math.round(gap <= 720 ? gap : 0), fade: Math.round(mark ? mark.fade : 30) });
           delete v.direction; delete v.from; delete v.to;
         } else {
           const [dir, deg] = e.target.value.split(":");
@@ -352,10 +364,11 @@ function versionRow(scene, v, i, preview) {
         changed(true);
       } },
         h("optgroup", { label: "Morning" }, half("rising").map((m) =>
-          momentOption(m, "rising", !clock && direction === "rising" && m.degrees === from))),
+          momentOption(m, "rising", sun && direction === "rising" && m.degrees === from))),
         h("optgroup", { label: "Evening" }, half("setting").map((m) =>
-          momentOption(m, "setting", !clock && direction === "setting" && m.degrees === from))),
-        !clock && moments.length > 0 && !isMoment(direction, from) && customOption(direction, from),
+          momentOption(m, "setting", sun && direction === "setting" && m.degrees === from))),
+        sun && moments.length > 0 && !isMoment(direction, from) && customOption(direction, from),
+        above && h("option", { value: "after", selected: follows }, `When ${above.label || "the one above"} is fully in`),
         h("option", { value: "clock", selected: clock }, "At a set time")),
       clock && h("input", { type: "time", value: hhmm(v.offset), "aria-label": "Starts at",
                             onchange: (e) => {
@@ -363,8 +376,11 @@ function versionRow(scene, v, i, preview) {
                               const [hh, mm] = e.target.value.split(":").map(Number);
                               v.offset = hh * 60 + mm;
                               changed();   // no rebuild: the box keeps its focus; the timeline redraws on its own
-                            } }));
-    fade = clock
+                            } }),
+      follows && h("span", { className: "unit wait" }, "+",
+        h("input", { type: "number", min: 0, max: 720, value: v.offset || 0, "aria-label": "Minutes to wait",
+                     onchange: (e) => { v.offset = Math.max(0, Number(e.target.value) || 0); changed(); } }), "min"));
+    fade = clock || follows
       ? h("span", { className: "unit" },
           h("input", { type: "number", min: 0, max: 720, value: v.fade, "aria-label": "Minutes until fully in",
                        onchange: (e) => { v.fade = Number(e.target.value) || 0; changed(); } }), "min later",
@@ -386,7 +402,12 @@ function versionRow(scene, v, i, preview) {
                     } },
     pickButton(v, scene, i),
     h("input", { type: "text", className: "label", value: v.label, placeholder: "Name", "aria-label": "Version name",
-                 oninput: (e) => { v.label = e.target.value; }, onchange: () => changed() }),
+                 oninput: (e) => {
+                   v.label = e.target.value;
+                   // The row below may start "When <this> is fully in": keep its name current.
+                   const next = document.querySelector(`.version[data-index="${i + 1}"] option[value="after"]`);
+                   if (next) next.textContent = `When ${v.label || "the one above"} is fully in`;
+                 }, onchange: () => changed() }),
     starts, fade,
     h("button", { type: "button", className: "icon-only", title: "Remove version", "aria-label": "Remove version",
                   onclick: () => { scene.versions.splice(i, 1); changed(true); } }, icon("close")));

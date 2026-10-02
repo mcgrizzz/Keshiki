@@ -179,6 +179,31 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "$$('.version').length") == 4, 5)
     print("PASS: a version at a set time fits the panel, and editing its time keeps focus and scroll.")
 
+    # A new version follows the last: it starts as Night is fully in, with no time to set.
+    day_scene = "draft.scenes.find(s => s.kind === 'day')"
+    run_js(dlg, "byText('button', '+ Add version').click()")
+    until(app, lambda: run_js(dlg, "$$('.version').length") == 5, 5)
+    starts = "$$('.version')[4].querySelector('select')"
+    assert run_js(dlg, f"{starts}.value") == "after"
+    assert run_js(dlg, f"{starts}.selectedOptions[0].textContent") == "When Night is fully in"
+    run_js(dlg, f"{day_scene}.versions[4].image = 'dawn.png'; {day_scene}.versions[4].label = 'Midnight'; changed(true)")
+    night_full = "(() => { const n = S.marks.find(m => m.index === 3); return (n.start + n.fade) % 1440; })()"
+    midnight = "(S.marks.find(m => m.index === 4) || {}).start"
+    until(app, lambda: run_js(dlg, midnight) is not None, 5, "the new version has no time")
+    assert run_js(dlg, midnight) == run_js(dlg, night_full)
+    # A wait after Night: no rebuild, and the time follows.
+    run_js(dlg, "const w = $('.version .wait input'); w.focus(); setv(w, '15')")
+    until(app, lambda: run_js(dlg, midnight) == (run_js(dlg, night_full) + 15) % 1440, 5, "the wait didn't move it")
+    assert run_js(dlg, "document.activeElement === $('.version .wait input')"), "the wait box lost its focus"
+    # Renaming Night renames the option below it at once.
+    run_js(dlg, "const n = $$('.version input.label')[3]; n.value = 'Late night'; n.dispatchEvent(new Event('input'))")
+    assert run_js(dlg, f"{starts}.selectedOptions[0].textContent") == "When Late night is fully in"
+    run_js(dlg, "const n = $$('.version input.label')[3]; setv(n, 'Night')")
+    shoot(dlg, "scene-follows")
+    run_js(dlg, "$$('.version')[4].querySelector('[aria-label=\"Remove version\"]').click()")
+    until(app, lambda: run_js(dlg, "$$('.version').length") == 4, 5)
+    print("PASS: a new version starts as the one above is fully in, plus a wait, with no time to set.")
+
     # Delete scene asks first, with focus on the safe answer; No keeps the scene.
     count = run_js(dlg, "draft.scenes.length")
     run_js(dlg, "$('#deleteScene').click()")

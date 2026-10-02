@@ -126,6 +126,10 @@
                             background: #000a; color: #fff; opacity: 0; transition: opacity 0.15s; }
 .album-tile:hover .remove, .album-tile .remove:focus-visible { opacity: 1; }
 #main .album-add { padding: 4px 8px; font-size: 12px; line-height: 1.25; white-space: normal; border-style: dashed; }
+/* Combining single pictures: a ticked list with each picture's thumbnail. */
+.combine-dialog .combine-list { display: flex; flex-direction: column; gap: 2px; max-height: 40vh; overflow-y: auto; }
+.combine-dialog .check { margin: 0; padding: 3px 0; }
+.combine-dialog .thumb { width: 48px; height: 30px; border-radius: 4px; background: var(--kiso-soft) center / cover; flex: none; }
 .image-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .image-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

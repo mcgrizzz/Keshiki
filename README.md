@@ -15,7 +15,7 @@ Background scenes for Anki's main window that follow the sun through the day, an
 
 Open **Tools → 🖼️ Keshiki**.
 
-1. On **Screens**, choose **Add images...**. The pictures become an album on the deck list, taking turns. Already have single-picture scenes there? **Combine** folds them into an album.
+1. On **Screens**, choose **Add images...**. Several pictures become an album on the deck list, taking turns. Later, add pictures on **Scenes**; **Combine pictures...** there folds single-picture scenes into an album.
 2. On **Scenes**, choose **New day cycle**, then pick a picture for each version. Drag along the strip under the preview to see any time of day, or press ▶ to watch the next 24 hours as a timelapse. Anki's main window follows along until you press **Back to now**.
 3. Back on **Screens**, give **Studying** its own scenes if you like, and set dim and blur.
 

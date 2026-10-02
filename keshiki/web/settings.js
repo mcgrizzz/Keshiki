@@ -139,7 +139,6 @@ function welcome() {
 
 function sceneChooser(screen) {
   const options = draft.scenes.filter((s) => !screen.scenes.includes(s.id));
-  const singles = screen.scenes.map(sceneById).filter((sc) => sc && sc.kind === "single" && sc.versions[0].image);
   const add = h("select", { "aria-label": "Add a scene", onchange: (e) => {
     if (e.target.value) { screen.scenes.push(e.target.value); changed(true); }
   } }, h("option", { value: "" }, screen.scenes.length ? "Add another..." : "Choose a scene..."),
@@ -157,10 +156,7 @@ function sceneChooser(screen) {
             h("button", { type: "button", "aria-label": `Remove ${scene.name}`, title: "Remove",
                           onclick: () => { screen.scenes = screen.scenes.filter((x) => x !== id); changed(true); } }, "×"));
         }),
-        options.length ? add : null,
-        singles.length > 1 && h("button", { type: "button", className: "link combine",
-          title: "One album instead of a scene for each picture; they still take turns",
-          onclick: () => combineIntoAlbum(screen, singles) }, `Combine ${singles.length} pictures into an album`))),
+        options.length ? add : null)),
     // A screen's scenes, and each picture of an album, take turns; with one there's nothing
     // to shuffle yet, so say how.
     screenTurns(screen) > 1
@@ -185,13 +181,16 @@ function scenesPage() {
   loadMoments();
   if (!sceneById(sel)) sel = draft.scenes.length ? draft.scenes[0].id : null;
   const scene = sceneById(sel);
+  const singles = draft.scenes.filter((sc) => sc.kind === "single" && sc.versions[0] && sc.versions[0].image);
   return [
     ...pageHead("Scenes", "A scene is one picture, an album of pictures that take turns, or versions of one picture that change through the day."),
     h("div", { className: "scenes" },
       h("div", {},
         h("div", { className: "list-actions" },
           h("button", { type: "button", onclick: () => addImagesAsScenes() }, "Add images..."),
-          h("button", { type: "button", onclick: () => addScene("day") }, "New day cycle")),
+          h("button", { type: "button", onclick: () => addScene("day") }, "New day cycle"),
+          singles.length > 1 && h("button", { type: "button", id: "combine", title: "Put single pictures in one album",
+                                              onclick: () => askCombine(singles) }, "Combine pictures...")),
         h("div", { className: "scene-list" }, draft.scenes.map((s) =>
           h("button", { type: "button", className: "scene-item", "aria-current": s.id === sel ? "true" : "false",
                         onclick: () => { stopPlaying(); sel = s.id; scrub = null; albumShown = 0; call("end_moment"); render(); } },
@@ -223,18 +222,45 @@ async function addImagesToAlbum(scene) {
   changed(true);
 }
 
-// Single-picture scenes on a screen, folded into one album there. Ones no other screen
-// shows go: the album has their pictures (and positions, which belong to the pictures).
-async function combineIntoAlbum(screen, singles) {
-  const album = await call("new_scene", { kind: "album", images: singles.map((sc) => sc.versions[0].image) });
-  draft.scenes.push(album);
+// Single-picture scenes folded into one album. A screen that showed any of them shows the
+// album instead, where the first one was; their positions belong to the pictures, so they stay.
+async function combineIntoAlbum(singles, name) {
+  const album = await call("new_scene", { kind: "album", name, images: singles.map((sc) => sc.versions[0].image) });
   const ids = new Set(singles.map((sc) => sc.id));
-  const at = screen.scenes.findIndex((id) => ids.has(id));
-  screen.scenes = screen.scenes.filter((id) => !ids.has(id));
-  screen.scenes.splice(at, 0, album.id);
-  const shown = new Set(Object.values(draft.screens).flatMap((sc) => sc.scenes));
-  draft.scenes = draft.scenes.filter((sc) => !ids.has(sc.id) || shown.has(sc.id));
+  for (const screen of Object.values(draft.screens)) {
+    const at = screen.scenes.findIndex((id) => ids.has(id));
+    if (at < 0) continue;
+    screen.scenes = screen.scenes.filter((id) => !ids.has(id));
+    screen.scenes.splice(at, 0, album.id);
+  }
+  draft.scenes = draft.scenes.filter((sc) => !ids.has(sc.id));
+  draft.scenes.push(album);
+  sel = album.id;
+  albumShown = 0;
   changed(true);
+}
+
+// Which single pictures to combine, all ticked to start, and the album's name.
+function askCombine(singles) {
+  const picked = new Set(singles.map((sc) => sc.id));
+  const name = h("input", { type: "text", className: "album-name", value: "Album", "aria-label": "Album name" });
+  const go = h("button", { type: "button", className: "primary", id: "combineGo", onclick: () => {
+    closeModal();
+    combineIntoAlbum(singles.filter((sc) => picked.has(sc.id)), name.value.trim() || "Album");
+  } });
+  const count = () => {
+    go.textContent = `Combine ${picked.size} pictures`;
+    go.disabled = picked.size < 2;
+  };
+  openModal(h("div", { className: "dialog small combine-dialog" },
+    h("h2", {}, "Combine into an album"),
+    h("p", { className: "help" }, "The pictures become one album; screens that showed them show the album, and its pictures take turns."),
+    h("div", { className: "field" }, h("label", {}, "Album name"), name),
+    h("div", { className: "combine-list" }, singles.map((sc) => h("label", { className: "check" },
+      h("input", { type: "checkbox", checked: true, onchange: (e) => { e.target.checked ? picked.add(sc.id) : picked.delete(sc.id); count(); } }),
+      h("span", { className: "thumb", style: bg(sceneThumb(sc)) }), sc.name))),
+    h("div", { className: "dialog-foot" }, h("button", { type: "button", onclick: closeModal }, "Cancel"), go)));
+  count();
 }
 
 async function addScene(kind) {

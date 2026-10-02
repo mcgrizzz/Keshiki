@@ -350,20 +350,38 @@ def check(app, shots, base):
     assert run_js(dlg, f"!{study_card}.querySelector('.add-images')"), "screens add scenes, not images"
     assert run_js(dlg, f"!!{study_card}.querySelector('select.shuffle')"), "no shuffle with two scenes"
     assert run_js(dlg, "draft.screens.main.scenes.length") == 1
-    # Single-picture scenes on a screen fold into one album.
-    run_js(dlg, """(async () => { for (const image of ['dawn.png', 'dusk.png']) {
-        const sc = await call('new_scene', { kind: 'single', image }); draft.scenes.push(sc);
-        draft.screens.main.scenes.push(sc.id); } changed(true); })()""")
-    until(app, lambda: run_js(dlg, f"!!{main_card}.querySelector('.combine')"), 5, "no Combine for two single pictures")
-    assert run_js(dlg, f"{main_card}.querySelector('.combine').textContent") == "Combine 2 pictures into an album"
-    run_js(dlg, f"{main_card}.querySelector('.combine').click()")
-    until(app, lambda: run_js(dlg, "draft.screens.main.scenes.length") == 2, 5, "Combine didn't fold them")
-    assert run_js(dlg, "sceneById(draft.screens.main.scenes[1]).versions.map(v => v.image)") == ["dawn.png", "dusk.png"]
-    assert run_js(dlg, "draft.scenes.filter(s => s.kind === 'single').length") == 0, "the single scenes stayed"
+    assert run_js(dlg, "!$('.combine')"), "combining belongs on the Scenes page"
     shoot(dlg, "screens-shuffle")
     run_js(dlg, "$('#cancel').click()")
     until(app, lambda: run_js(dlg, "draft.screens.study.scenes.length") == 1, 5)
-    print("PASS: each screen shows its shuffle, and folds single pictures into an album.")
+    print("PASS: each screen shows its shuffle once it has more than one turn.")
+
+    # Single pictures combine into an album on the Scenes page: the ticked ones go in, and a
+    # screen that showed them shows the album where the first one was.
+    run_js(dlg, """(async () => { for (const image of ['dawn.png', 'dusk.png', 'day.png']) {
+        const sc = await call('new_scene', { kind: 'single', image }); draft.scenes.push(sc);
+        if (image !== 'day.png') draft.screens.main.scenes.push(sc.id); } changed(true); })()""")
+    until(app, lambda: run_js(dlg, "draft.scenes.filter(s => s.kind === 'single').length") == 3, 5)
+    run_js(dlg, "byText('#nav button', 'Scenes').click()")
+    until(app, lambda: run_js(dlg, "!!$('#combine')"), 5, "no Combine with three single pictures")
+    run_js(dlg, "$('#combine').click()")
+    until(app, lambda: run_js(dlg, "$$('.combine-list input').length") == 3, 5, "the dialog doesn't list them")
+    assert run_js(dlg, "$('#combineGo').textContent") == "Combine 3 pictures"
+    run_js(dlg, "$$('.combine-list input')[2].click(); setv($('.combine-dialog input.album-name'), 'Stills')")
+    assert run_js(dlg, "$('#combineGo').textContent") == "Combine 2 pictures"
+    shoot(dlg, "combine-dialog")
+    run_js(dlg, "$('#combineGo').click()")
+    until(app, lambda: run_js(dlg, "!!draft.scenes.find(s => s.name === 'Stills')"), 5, "Combine didn't make the album")
+    stills = "draft.scenes.find(s => s.name === 'Stills')"
+    assert run_js(dlg, f"{stills}.versions.map(v => v.image)") == ["dawn.png", "dusk.png"]
+    assert run_js(dlg, "draft.scenes.filter(s => s.kind === 'single').map(s => s.versions[0].image)") == ["day.png"]
+    assert run_js(dlg, "draft.screens.main.scenes.map(id => sceneById(id).name)") == ["Album", "Stills"]
+    assert run_js(dlg, "!$('#combine')"), "Combine stays with one single picture left"
+    shoot(dlg, "combined")
+    run_js(dlg, "$('#cancel').click()")
+    until(app, lambda: run_js(dlg, "!draft.scenes.find(s => s.name === 'Stills')"), 5)
+    run_js(dlg, "byText('#nav button', 'Screens').click()")
+    print("PASS: single pictures combine into an album on the Scenes page, in place on the screens that showed them.")
 
     # Cancel drops unsaved edits and keeps the window open.
     run_js(dlg, "setv($$('input[aria-label=Blur]')[0], '12')")

@@ -8,5 +8,5 @@ Open **Tools → 🖼️ Keshiki** (or this add-on's **Config** button) to chang
 | `screens.study` | The deck overview, reviews and the finished screen. Same keys, plus `enabled`, and `same_as_main` to use the deck list's scenes. |
 | `day` | Where sunrise and sunset come from: `source` `manual` uses `sunrise` and `sunset` (`HH:MM`); `location` uses `latitude` and `longitude`, with the typed times as a fallback. |
 | `screens.done` | Once nothing is left to study in any deck: `enabled`, and the `scenes` (and `every`) both screens switch to. |
-| `light` | `tint`: light the pictures by the sun's height, at `tint_strength` percent. At night, pictures that show night keep their own lights (found once, and kept beside the thumbnail), a little brighter and softly blooming. |
+| `light` | `tint`: light the pictures by the sun's height, at `tint_strength` percent. At night, pictures that show night keep their own lights (found once, and kept beside the thumbnail), a little brighter and softly blooming. `scope`: `"all"` lights every scene, `"day"` only day cycles. |
 | `transition_seconds` | How long the background takes to crossfade to a new picture. |

@@ -196,7 +196,7 @@ class SettingsBridge(kiso_settings.Bridge):
         minute = (float(arg["minute"]) if arg.get("minute") is not None
                   else position if scene.get("kind") == "day" else now.hour * 60 + now.minute)
         layers = light(layers, arg.get("light") or DEFAULTS["light"], minute, anchors, library.image_stats,
-                       library.lights_url)
+                       library.lights_url, kind=scene.get("kind"))
         focus = arg.get("images") or {}
         out = [dict(layer, src=library.image_url(layer["image"]),
                     **{k: (focus.get(layer["image"]) or {}).get(k, 50) for k in ("x", "y")}) for layer in layers]
@@ -257,18 +257,13 @@ class SettingsBridge(kiso_settings.Bridge):
                 "anchors": _times(anchors)}
 
     def op_moments(self, arg) -> list:
-        """The sun's named moments with today's times, for the day-cycle version rows; then
-        any other heights asked for (`extra`: [direction, degrees] pairs), marked custom."""
+        """The sun's named moments with today's times, for the day-cycle version rows."""
         from .sun import crossing
         day_cfg = arg.get("day") or DEFAULTS["day"]
         curve = day_anchors(day_cfg, _sun(day_cfg))["curve"]
-        named = [{"key": key, "direction": direction, "degrees": degrees, "name": name,
-                  "time": round(crossing(curve, degrees, direction == "rising"))}
-                 for key, direction, degrees, name in SUN_MOMENTS]
-        extra = [{"direction": direction, "degrees": degrees, "custom": True,
-                  "time": round(crossing(curve, float(degrees), direction == "rising"))}
-                 for direction, degrees in arg.get("extra") or []]
-        return named + extra
+        return [{"key": key, "direction": direction, "degrees": degrees, "name": name,
+                 "time": round(crossing(curve, degrees, direction == "rising"))}
+                for key, direction, degrees, name in SUN_MOMENTS]
 
     def op_sun(self, day_cfg) -> Optional[dict]:
         times = _sun(dict(day_cfg, source="location"))

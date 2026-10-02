@@ -90,9 +90,12 @@ def check(app, shots, base):
         run_js(dlg, f"$$('.tile').find(t => t.title === '{name}.png').click(); byText('button', 'Use image').click()")
     until(app, lambda: run_js(dlg, "$$('.ribbon .seg').length") >= 4, 5, "ribbon didn't draw")
     # Versions start and finish at named moments of the sun, with today's times.
-    until(app, lambda: run_js(dlg, "$$('.version select')[0].selectedOptions[0].textContent").startswith("First light ·"),
+    # The dropdowns name the rule; today's time it makes is on the line under each.
+    until(app, lambda: run_js(dlg, "$$('.version select')[0].selectedOptions[0].textContent") == "First light",
           5, "the dawn version doesn't start at First light")
-    assert run_js(dlg, "$$('.version select')[1].selectedOptions[0].textContent").startswith("Sunrise ·")
+    assert run_js(dlg, "$$('.version select')[1].selectedOptions[0].textContent") == "Sunrise"
+    until(app, lambda: run_js(dlg, "$('.version .when-start').textContent").startswith("Today, "), 5, "no time under the rule")
+    assert run_js(dlg, "/^Today, \\d\\d:\\d\\d$/.test($('.version .when-end').textContent)")
     assert run_js(dlg, "!$('.versions').textContent.includes('°')"), "sun degrees still show"
     assert run_js(dlg, "$$('.vhead span').map(s => s.textContent)") == ["Version", "Transition starts", "Transition ends"]
     assert run_js(dlg, "$('#playSpeed').selectedOptions[0].textContent") == "24 h in 10 s"
@@ -238,12 +241,14 @@ def check(app, shots, base):
     run_js(dlg, "const n = $$('.version input.label')[3]; n.value = 'Late night'; n.dispatchEvent(new Event('input'))")
     assert run_js(dlg, f"{starts}.selectedOptions[0].textContent") == "When Late night is fully in"
     run_js(dlg, "const n = $$('.version input.label')[3]; setv(n, 'Night')")
-    # Its wait and its length side by side on one line, today's times on a muted line under them.
-    lines = run_js(dlg, """(() => { const r = (s) => $$('.version')[4].querySelector(s).getBoundingClientRect();
-        return { wait: r('.c-wait input').top, fade: r('.c-fade input').top, select: r('select').bottom,
-                 range: r('.c-range').top, rangeText: $$('.version')[4].querySelector('.c-range').textContent }; })()""")
-    assert abs(lines["wait"] - lines["fade"]) < 2 and lines["wait"] > lines["select"] and lines["range"] > lines["fade"], lines
-    until(app, lambda: run_js(dlg, "$$('.version')[4].querySelector('.c-range').textContent").startswith("Today "), 5)
+    # Its rule and wait under Transition starts, its length under Transition ends (level with
+    # the rule), and today's time under each.
+    lines = run_js(dlg, """(() => { const v = $$('.version')[4], r = (s) => v.querySelector(s).getBoundingClientRect();
+        return { rule: r('.c-start select').top, wait: r('.c-start .wait input').top, length: r('.c-end input').top,
+                 start: r('.when-start').top, end: r('.when-end').top }; })()""")
+    assert lines["wait"] > lines["rule"] and lines["start"] > lines["wait"], lines
+    assert abs(lines["length"] - lines["rule"]) < 4 and lines["end"] > lines["length"], lines
+    until(app, lambda: run_js(dlg, "$$('.version')[4].querySelector('.when-end').textContent").startswith("Today, "), 5)
     run_js(dlg, "$('main').scrollTop = $('main').scrollHeight")
     shoot(dlg, "scene-follows")
     run_js(dlg, "$('main').scrollTop = 0")
@@ -251,11 +256,12 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "$$('.version').length") == 4, 5)
     print("PASS: a new version starts as the one above is fully in, plus a wait, with no time to set.")
 
-    # A height that isn't a named moment (from an older version) says its time today.
+    # A height that isn't a named moment (from an older version) stays, with its time today under it.
     run_js(dlg, f"Object.assign({day_scene}.versions[1], {{ direction: 'rising', from: 15 }}); changed(true)")
-    until(app, lambda: "·" in run_js(dlg, "$$('.version')[1].querySelector('select').selectedOptions[0].textContent"), 5,
+    until(app, lambda: run_js(dlg, "$$('.version')[1].querySelector('select').selectedOptions[0].textContent")
+          == "Sun at 15° (morning)", 5, "a sun height without a name isn't shown")
+    until(app, lambda: run_js(dlg, "$$('.version')[1].querySelector('.when-start').textContent").startswith("Today, "), 5,
           "a sun height without a name has no time")
-    assert run_js(dlg, "$$('.version')[1].querySelector('select').selectedOptions[0].textContent").startswith("Sun at 15° (morning) · ")
     run_js(dlg, f"Object.assign({day_scene}.versions[1], {{ from: 6 }}); changed(true)")
 
     # A narrow window: each version takes two lines, so its dropdowns keep their width.
@@ -586,6 +592,11 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "$('.light-preview .readout').textContent") == "19:00", 5, "the strip didn't move the preview")
     run_js(dlg, "$('main').scrollTop = $('main').scrollHeight")
     shoot(dlg, "day-light")
+    # Lighting only day cycles: the preview shows one (a day cycle's picture); then back to every scene.
+    run_js(dlg, "byText('label', 'Day cycles only').querySelector('input').click()")
+    until(app, lambda: run_js(dlg, "draft.light.scope") == "day", 5)
+    until(app, lambda: run_js(dlg, "$$('.light-preview .keshiki-layer').length") > 0, 5, "no light preview for day cycles only")
+    run_js(dlg, "byText('label', 'Every scene').querySelector('input').click()")
     run_js(dlg, "byText('label', 'Light the pictures by the sun').querySelector('input').click(); $('main').scrollTop = 0")
     print("PASS: the Day & time page looks up a rough location once, works out today's sun, and previews the light.")
 

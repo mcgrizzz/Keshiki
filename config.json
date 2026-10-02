@@ -36,7 +36,8 @@
     "light": {
         "tint": false,
         "tint_strength": 70,
-        "bloom": 50
+        "bloom": 50,
+        "scope": "all"
     },
     "config_version": 2
 }

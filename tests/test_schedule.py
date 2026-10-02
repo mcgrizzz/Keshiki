@@ -293,4 +293,22 @@ def test_bloom_rides_along_with_a_pictures_lights():
 
 def test_version_3_drops_the_smoothing_switch():
     cfg, changed = migrate({"light": {"tint": True, "match": False, "match_strength": 40}, "config_version": 2})
-    assert changed and cfg["light"] == {"tint": True, "tint_strength": 70, "bloom": 50} and cfg["config_version"] == 3
+    assert changed and cfg["light"] == {"tint": True, "tint_strength": 70, "bloom": 50, "scope": "all"} and cfg["config_version"] == 3
+
+
+def test_daylight_can_light_only_day_cycles():
+    stats = {"a": {"mean": [0.4] * 3, "std": [0.1] * 3}}
+    anchors = day_anchors({"source": "manual", "sunrise": "06:00", "sunset": "19:00"})
+    layers = [{"image": "a", "opacity": 1.0}]
+    cfg = {"tint": True, "tint_strength": 100, "scope": "day"}
+    assert "light" in light(layers, cfg, 19 * 60, anchors, stats.get, kind="day")[0]
+    assert "light" not in light(layers, cfg, 19 * 60, anchors, stats.get, kind="single")[0]
+    assert "light" in light(layers, dict(cfg, scope="all"), 19 * 60, anchors, stats.get, kind="single")[0]
+    # On a screen: a single picture stays as it is.
+    built, _ = migrate({})
+    built["light"].update(tint=True, scope="day")
+    built["scenes"] = [{"id": "s", "name": "S", "kind": "single", "versions": [{"label": "", "image": "a"}]}]
+    built["screens"]["main"]["scenes"] = ["s"]
+    look = build_look(built, "main", minute_of_day=19 * 60, now_minutes=0, launch_seed=0, sun=None,
+                      percent_done=lambda: 0, image_url=lambda n: n, image_stats=stats.get)
+    assert "light" not in look["layers"][0]

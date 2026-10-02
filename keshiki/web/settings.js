@@ -564,40 +564,33 @@ function versionPosition(scene, v, i) {
   return mark ? (mark.start + mark.fade) % 1440 : currentPosition(scene);
 }
 
-// The sun's named moments with today's times (Python's SUN_MOMENTS), fetched for the
-// day settings they were worked out from; heights in use that aren't named moments
-// (set in an older version) get today's times too.
+// The sun's named moments (Python's SUN_MOMENTS), fetched for the day settings they
+// were worked out from.
 let moments = [];
-let customTimes = {};   // "direction:degrees" -> minute of day
 let momentsFor = null;
 function loadMoments() {
-  const extra = draft.scenes.filter((sc) => sc.kind === "day").flatMap((sc) => sc.versions)
-    .filter((v) => v.anchor !== "clock" && v.anchor !== "after")
-    .flatMap((v) => [[v.direction || "rising", Number(v.from)], [v.direction || "rising", Number(v.to)]])
-    .filter(([, degrees]) => Number.isFinite(degrees));
-  const key = JSON.stringify([draft.day, extra]);
+  const key = JSON.stringify(draft.day);
   if (key === momentsFor) return;
   momentsFor = key;
-  call("moments", { day: draft.day, extra }).then((list) => {
+  call("moments", { day: draft.day }).then((list) => {
     if (!Array.isArray(list)) return;
-    moments = list.filter((m) => !m.custom);
-    customTimes = Object.fromEntries(list.filter((m) => m.custom).map((m) => [momentValue(m.direction, m.degrees), m.time]));
+    moments = list;
     if (page === "scenes") render();
   });
 }
 
 // A day version's start and finish are moments of one half of the day: the morning
 // (rising sun, up to noon) or the evening (from noon, setting). Values are "direction:degrees".
+// The dropdowns name the rule; today's time it gives goes on the line under them.
 const half = (direction) => moments.filter((m) => m.direction === direction || (direction === "setting" && m.key === "noon"));
 const momentValue = (direction, degrees) => `${direction}:${degrees}`;
 function momentOption(m, direction, selected) {
-  return h("option", { value: momentValue(direction, m.degrees), selected }, `${m.name} · ${hhmm(m.time)}`);
+  return h("option", { value: momentValue(direction, m.degrees), selected }, m.name);
 }
-// A height that isn't one of the named moments (set in an older version) stays choosable, with its time today.
+// A height that isn't one of the named moments (set in an older version) stays choosable.
 function customOption(direction, degrees) {
-  const time = customTimes[momentValue(direction, degrees)];
   return h("option", { value: momentValue(direction, degrees), selected: true },
-    `Sun at ${degrees}° (${direction === "rising" ? "morning" : "evening"})` + (time === undefined ? "" : ` · ${hhmm(time)}`));
+    `Sun at ${degrees}° (${direction === "rising" ? "morning" : "evening"})`);
 }
 function isMoment(direction, degrees) {
   return half(direction).some((m) => m.degrees === degrees);
@@ -607,10 +600,9 @@ function versionRow(scene, v, i, preview) {
   const num = (key, min, max, unit, label) => h("span", { className: "unit" },
     h("input", { type: "number", min, max, value: v[key], "aria-label": label,
                  onchange: (e) => { v[key] = Number(e.target.value) || 0; changed(true); } }), unit);
-  // A row's cells: when it starts and ends on its first line; a version that follows the
-  // one above, or starts at a set time, has its wait or time and its length on a second
-  // line, side by side, and the times that make today on a third.
-  let starts, fade, detail = [];
+  // Two cells, each a small stack: under Transition starts, the rule (and a wait, or a set
+  // time); under Transition ends, the rule or the length; and under each, today's time.
+  let starts, fade;
   if (scene.kind === "day") {
     const clock = v.anchor === "clock";
     // "after": starts when the version above is fully in, plus a wait (v.offset); not for the first row.
@@ -621,7 +613,7 @@ function versionRow(scene, v, i, preview) {
     const from = Number(v.from), to = Number(v.to);
     // Later in its half of the day: higher in the morning, lower in the evening (noon starts the evening).
     const after = (m) => (direction === "rising" ? m.degrees > from : m.key !== "noon" && m.degrees < from);
-    starts = h("select", { className: "c-start" + (clock || follows ? " wide" : ""), "aria-label": "Transition starts", onchange: (e) => {
+    const rule = h("select", { "aria-label": "Transition starts", onchange: (e) => {
         const mark = (S.marks || []).find((m) => m.index === i);
         if (e.target.value === "clock") {
           // Keep today's times when moving from the sun to the clock.
@@ -651,38 +643,29 @@ function versionRow(scene, v, i, preview) {
         sun && moments.length > 0 && !isMoment(direction, from) && customOption(direction, from),
         above && h("option", { value: "after", selected: follows }, `When ${above.label || "the one above"} is fully in`),
         h("option", { value: "clock", selected: clock }, "At a set time"));
-    if (clock || follows) {
-      // No rebuild on these edits: the box keeps its focus, and the timeline redraws on its own.
-      detail = [
-        clock
-          ? h("span", { className: "unit c-wait" }, "at", h("input", { type: "time", value: hhmm(v.offset), "aria-label": "Starts at",
-              onchange: (e) => {
-                if (!e.target.value) return;   // mid-edit, the box can be empty for a moment
-                const [hh, mm] = e.target.value.split(":").map(Number);
-                v.offset = hh * 60 + mm;
-                changed();
-              } }))
-          : h("span", { className: "unit c-wait wait" }, "wait",
-              h("input", { type: "number", min: 0, max: 720, value: v.offset || 0, "aria-label": "Minutes to wait",
-                           onchange: (e) => { v.offset = Math.max(0, Number(e.target.value) || 0); changed(); } }), "min"),
-        h("span", { className: "unit c-fade" }, "over",
-          h("input", { type: "number", min: 0, max: 720, value: v.fade, "aria-label": "Minutes until fully in",
-                       onchange: (e) => { v.fade = Number(e.target.value) || 0; changed(); } }), "min"),
-        h("small", { className: "c-range when-time" }),
-      ];
-    } else {
-      fade = h("select", { className: "c-end", "aria-label": "Transition ends", onchange: (e) => { v.to = Number(e.target.value.split(":")[1]); changed(true); } },
-        half(direction).filter(after).map((m) => momentOption(m, direction, m.degrees === to)),
-        moments.length > 0 && !isMoment(direction, to) && customOption(direction, to));
-    }
+    // No rebuild on the boxes' edits: each keeps its focus, and the times redraw on their own.
+    const minutes = (key, label, set) => h("input", { type: "number", min: 0, max: 720, value: v[key] || 0, "aria-label": label,
+                                                     onchange: (e) => { set(Math.max(0, Number(e.target.value) || 0)); changed(); } });
+    starts = cell("Transition starts", "when-start", rule,
+      clock && h("span", { className: "unit" }, "at", h("input", { type: "time", value: hhmm(v.offset), "aria-label": "Starts at",
+        onchange: (e) => {
+          if (!e.target.value) return;   // mid-edit, the box can be empty for a moment
+          const [hh, mm] = e.target.value.split(":").map(Number);
+          v.offset = hh * 60 + mm;
+          changed();
+        } })),
+      follows && h("span", { className: "unit wait" }, "then wait", minutes("offset", "Minutes to wait", (n) => { v.offset = n; }), "min"));
+    fade = cell("Transition ends", "when-end", clock || follows
+      ? h("span", { className: "unit length" }, "after", minutes("fade", "Minutes until fully in", (n) => { v.fade = n; }), "min")
+      : h("select", { "aria-label": "Transition ends", onchange: (e) => { v.to = Number(e.target.value.split(":")[1]); changed(true); } },
+          half(direction).filter(after).map((m) => momentOption(m, direction, m.degrees === to)),
+          moments.length > 0 && !isMoment(direction, to) && customOption(direction, to)));
   } else {
-    starts = num("at", 0, 100, "% done", "Starts at percent done");
-    fade = num("fade", 0, 100, "%", "Fade-in percent");
-    starts.classList.add("c-start");
-    fade.classList.add("c-end");
+    starts = cell("Starts at", null, num("at", 0, 100, "% done", "Starts at percent done"));
+    fade = cell("Fades in over", null, num("fade", 0, 100, "%", "Fade-in percent"));
   }
   // Working on a version's fields shows that version in the preview.
-  return h("div", { className: "version" + (detail.length ? " detailed" : ""), "data-index": i,
+  return h("div", { className: "version", "data-index": i,
                     onfocusin: () => {
                       if (playing) return;
                       run = null;
@@ -699,8 +682,14 @@ function versionRow(scene, v, i, preview) {
                  }, onchange: () => changed() }),
     starts, fade,
     h("button", { type: "button", className: "icon-only c-remove", title: "Remove version", "aria-label": "Remove version",
-                  onclick: () => { scene.versions.splice(i, 1); changed(true); } }, icon("close")),
-    detail);
+                  onclick: () => { scene.versions.splice(i, 1); changed(true); } }, icon("close")));
+}
+
+// One of a version's two cells: its controls, stacked, and the time they make today (filled
+// in from the preview's marks). The label shows only when the row is two lines (narrow).
+function cell(label, when, ...controls) {
+  return h("div", { className: "cell " + (when === "when-end" ? "c-end" : "c-start") },
+    h("span", { className: "cell-label" }, label), controls, when && h("small", { className: "when " + when }));
 }
 
 // Timelapse: one play-pause button. A day cycle plays the next 24 hours from now
@@ -864,8 +853,10 @@ function updateScenePreview(preview, redrawRibbon) {
     stageFor(preview).apply({ layers: res.layers, light: res.light, dim: 0, blur: 0, fade: redrawRibbon ? 300 : ease },
                             !redrawRibbon && !ease);
     for (const m of res.marks) {
-      const cell = document.querySelector(`.version[data-index="${m.index}"] .when-time`);
-      if (cell) cell.textContent = `Today ${hhmm(m.start)} → ${hhmm(m.start + m.fade)}`;
+      const row = document.querySelector(`.version[data-index="${m.index}"]`);
+      if (!row || scene.kind !== "day") continue;
+      row.querySelector(".when-start").textContent = `Today, ${hhmm(m.start)}`;
+      row.querySelector(".when-end").textContent = `Today, ${hhmm(m.start + m.fade)}`;
     }
     if (wrap && redrawRibbon) drawRibbon(wrap, res, scene);
     // Highlight the version on top right now.
@@ -1155,11 +1146,16 @@ function lightPanel() {
     h("div", { className: "indent-help" },
       help("Warm at sunrise and sunset, blue at twilight, dim at night.",
         "Plain light at midday; the night is dim and faded, the way eyes see in the dark. It follows the sun's height: "
-        + "for your location, or the sunrise and sunset times above. Works on any scene, even a single picture.")),
+        + "for your location, or the sunrise and sunset times above. It can light every scene, even a single "
+        + "picture, or only day cycles, so other pictures keep their own colours all day.")),
     dependent(l.tint,
       h("div", { className: "light-body" + (look ? "" : " no-look") },
         look,
         h("div", { className: "light-controls" },
+          h("div", { className: "field" }, h("span", { className: "label" }, "Applies to"),
+            h("div", { className: "choices inline" },
+              radio("lightScope", l.scope !== "day", "Every scene", () => { l.scope = "all"; changed(true); }),
+              radio("lightScope", l.scope === "day", "Day cycles only", () => { l.scope = "day"; changed(true); }))),
           slider("Strength", l.tint_strength, 0, 100, "%", (v) => { l.tint_strength = v; drawStrip(); }),
           h("div", { className: "field" }, h("span", { className: "label" }, "Today"),
             h("div", {}, h("div", { className: "daylight-wrap" }, strip, hand, input), ticks)),
@@ -1171,11 +1167,14 @@ function lightPanel() {
   );
 }
 
-// The picture the light preview uses: the deck list's first scene (a day cycle shows its
-// version for the chosen time; an album its first picture), or else the first scene.
+// The picture the light preview uses: the deck list's first scene, or else the first scene
+// (a day cycle shows its version for the chosen time; an album its first picture). Lighting
+// only day cycles, it's the first day cycle, and there's no preview without one.
 function lightScene() {
-  const scene = sceneById(draft.screens.main.scenes[0]) || draft.scenes[0];
-  if (!scene || !scene.versions.some((v) => v.image)) return null;
+  const days = draft.light.scope === "day";
+  const scene = [...draft.screens.main.scenes.map(sceneById), ...draft.scenes]
+    .find((sc) => sc && sc.versions.some((v) => v.image) && (!days || sc.kind === "day"));
+  if (!scene) return null;
   return scene.kind === "album" ? { ...scene, kind: "single", versions: albumPictures(scene).slice(0, 1) } : scene;
 }
 

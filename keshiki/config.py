@@ -35,7 +35,8 @@ DEFAULTS: Dict[str, Any] = {
     "transition_seconds": 2.0,
     # tint: light the pictures by the sun's height (daylight.py), at tint_strength percent.
     # bloom: how much a night picture's own lights glow, in percent (50 is the standard look).
-    "light": {"tint": False, "tint_strength": 70, "bloom": 50},
+    # scope: which scenes it lights, "all" or only day cycles ("day").
+    "light": {"tint": False, "tint_strength": 70, "bloom": 50, "scope": "all"},
     "config_version": CONFIG_VERSION,
 }
 

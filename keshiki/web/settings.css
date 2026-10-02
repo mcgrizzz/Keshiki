@@ -8,6 +8,8 @@
 .daylight-wrap:focus-within { outline: 2px solid var(--kiso-link); outline-offset: 2px; border-radius: 5px; }
 /* Light: a small picture in that light beside its controls. */
 .indent-help { margin-left: 26px; }
+.choices.inline { flex-direction: row; flex-wrap: wrap; gap: 4px 18px; margin-top: 0; }
+.choices.inline .check { margin: 0; }
 .light-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 4px 20px; align-items: start; margin-top: 10px; }
 .light-body.no-look { grid-template-columns: minmax(0, 1fr); }
 .light-controls > .field:first-child { margin-top: 0; }
@@ -96,7 +98,9 @@ fieldset.dependent:disabled * { cursor: default; }
 /* The picture sits under the readout and the play button (its stage is added after them). */
 .preview .keshiki-stage { z-index: 0; }
 .preview .readout { z-index: 1; }
-.preview-controls { position: absolute; z-index: 1; right: 10px; bottom: 8px; display: flex; gap: 6px; align-items: center; }
+/* Right of the readout (never over it): in a small preview they wrap upward. */
+.preview-controls { position: absolute; z-index: 1; left: 104px; right: 10px; bottom: 8px; display: flex; gap: 6px;
+                    align-items: center; justify-content: flex-end; flex-wrap: wrap-reverse; }
 #main .preview-controls > * { border-radius: 999px; border: 0; background: #000a; color: #fff; padding: 4px 12px; }
 #main .preview-controls select { padding: 4px 8px; }
 #main .preview-controls select option { color: initial; background: initial; }
@@ -129,26 +133,26 @@ fieldset.dependent:disabled * { cursor: default; }
 .ticks span:first-child { transform: none; }
 .ticks span:last-child { transform: translateX(-100%); }
 
-/* Versions: each row is a subgrid of the table, so the columns line up down the table while
-   each row places its own cells. Line one: picture, name, when the transition starts and
-   ends, remove. A version that follows the one above (or starts at a set time) has its start
-   across both columns, then its wait (or time) beside its length, then today's times. */
-.versions { display: grid; grid-template-columns: 64px minmax(72px, 1fr) fit-content(240px) fit-content(220px) 26px; gap: 4px 8px;
-            align-items: center; margin-top: 12px; }
-.versions.single { grid-template-columns: 64px minmax(0, 1fr) auto; }
-.vhead, .version { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; row-gap: 4px; }
-.version { padding: 2px 0; }
-.version > .pick { grid-area: 1 / 1; align-self: start; }
-.version > input.label { grid-area: 1 / 2; }
+/* Versions: each row is a subgrid of the table, so the columns line up down the table, and
+   reads as one transition: picture, a short name, then two stacked cells, when it starts
+   and when it ends, each with today's time under its controls. Rows are ruled apart. */
+.versions { display: grid; grid-template-columns: 64px minmax(64px, 110px) minmax(0, 1fr) minmax(0, 1fr) 26px;
+            column-gap: 12px; margin-top: 14px; }
+.versions.single { grid-template-columns: 64px minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; }
+.vhead, .version { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: start; }
+.vhead { padding-bottom: 6px; }
+.version { padding: 12px 0; border-top: 1px solid var(--kiso-soft); }
+.version > .pick { grid-area: 1 / 1; }
+.version > input.label { grid-area: 1 / 2; margin-top: 6px; }
 .version > .c-start, .vhead > .c-start { grid-area: 1 / 3; }
-.version > .c-start.wide { grid-area: 1 / 3 / auto / 5; }
 .version > .c-end, .vhead > .c-end { grid-area: 1 / 4; }
 .vhead > .c-name { grid-area: 1 / 2; }
-.version > .c-remove { grid-area: 1 / 5; }
-.version > .c-wait { grid-area: 2 / 3; }
-.version > .c-fade { grid-area: 2 / 4; }
-.version > .c-range { grid-area: 3 / 3 / auto / 5; min-height: 1.4em; color: var(--kiso-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
-.vhead span { font-size: 12px; color: var(--kiso-muted); padding-bottom: 2px; }
+.version > .c-remove { grid-area: 1 / 5; margin-top: 6px; }
+.vhead span { font-size: 12px; color: var(--kiso-muted); }
+.cell { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; padding-top: 6px; }
+.cell > .unit { min-height: 28px; }
+.cell-label { display: none; font-size: 12px; color: var(--kiso-muted); }
+.when { min-height: 1.4em; margin-top: -2px; color: var(--kiso-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 /* The row showing in the preview: its picture and name are marked. */
 #main .version.showing > .pick { box-shadow: 0 0 0 2px var(--kiso-canvas), 0 0 0 4px var(--kiso-accent); }
 .version.showing > input.label { border-color: var(--kiso-accent); }
@@ -160,7 +164,7 @@ fieldset.dependent:disabled * { cursor: default; }
 .version select { width: 100%; min-width: 0; }
 .version .unit input[type=time] { width: 112px; }
 .versions .file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#main .add-version { grid-column: 2 / span 2; justify-self: start; margin-top: 4px; }
+#main .add-version { grid-column: 2 / span 2; justify-self: start; margin-top: 10px; }
 .picker { display: grid; grid-template-columns: 1fr 300px; gap: 14px; min-height: 0; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; overflow-y: auto; max-height: 56vh; align-content: start; padding: 2px; }
 #modal .tile { aspect-ratio: 16 / 10; padding: 0; border-radius: 6px; background: var(--kiso-soft) center / cover; border: 2px solid transparent; }
@@ -236,24 +240,20 @@ fieldset.dependent:disabled * { cursor: default; }
 .image-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* A narrow editor (its own width, not the window's: the scene list may sit beside it or
-   above it): the name and remove on line one, starts and ends on line two, so the dropdowns
-   keep their width; the picture beside both. */
+   above it): each version on two lines, the picture and name, then its two cells side by
+   side, each labelled; the preview is smaller, so the timing gets the room. */
 .editor { container-type: inline-size; }
-@container (max-width: 600px) {   /* one line needs about 600px: picture, name, two dropdowns, remove */
-  .versions:not(.single) { grid-template-columns: 64px minmax(0, 1.2fr) minmax(0, 1fr) 28px; }
-  .vhead > .c-name { display: none; }
-  .vhead > .c-start { grid-area: 1 / 2; }
-  .vhead > .c-end { grid-area: 1 / 3; }
-  .version > .pick { grid-area: 1 / 1 / span 2; align-self: center; }
-  .version.detailed > .pick { align-self: start; }
-  .version > input.label { grid-area: 1 / 2 / auto / 4; }
-  .version > .c-remove { grid-area: 1 / 4; }
-  .version > .c-start { grid-area: 2 / 2; }
-  .version > .c-start.wide { grid-area: 2 / 2 / auto / 5; }
-  .version > .c-end { grid-area: 2 / 3 / auto / 5; }
-  .version > .c-wait { grid-area: 3 / 2; }
-  .version > .c-fade { grid-area: 3 / 3 / auto / 5; }
-  .version > .c-range { grid-area: 4 / 2 / auto / 5; }
+@container (max-width: 600px) {
+  .preview { width: min(100%, calc(min(26vh, 260px) * var(--kk-window, 1.6))); }
+  /* Two equal halves on line two: 64 + 1fr against 26 + 1fr + 26. */
+  .versions:not(.single) { grid-template-columns: 64px minmax(0, 1fr) 26px minmax(0, 1fr) 26px; }
+  .vhead { display: none; }
+  .version > .pick { grid-area: 1 / 1; align-self: center; }
+  .version > input.label { grid-area: 1 / 2 / auto / 5; margin: 0; align-self: center; }
+  .version > .c-remove { grid-area: 1 / 5; margin: 0; align-self: center; }
+  .version > .c-start { grid-area: 2 / 1 / auto / 3; padding-top: 10px; }
+  .version > .c-end { grid-area: 2 / 3 / auto / 6; padding-top: 10px; }
+  .cell-label { display: block; }
 }
 
 /* A narrow window: the scene list becomes a strip above the editor, which gets the full width. */

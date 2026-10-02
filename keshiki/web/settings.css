@@ -141,6 +141,27 @@
 .folder-dialog .help.indent { margin: 0 0 6px 26px; }
 .folder-dialog .error:empty, .folder-missing:empty { display: none; }
 .position-dialog { width: min(520px, 92vw); }
+/* The picture library: tabs, tiles marked in use or not, a hover action on each. */
+.library-dialog .tabs { display: flex; gap: 4px; }
+#modal .tab { border-radius: 999px; padding: 4px 12px; }
+#modal .tab[aria-selected="true"] { background: var(--kiso-accent); border-color: var(--kiso-accent); color: var(--kiso-accent-fg); }
+.library-body { min-height: 200px; max-height: 60vh; overflow-y: auto; }
+.library-grid { max-height: none; }
+.lib-tile { position: relative; aspect-ratio: 16 / 10; border-radius: 6px; overflow: hidden; background: var(--kiso-soft); }
+.lib-thumb { position: absolute; inset: 0; background: center / cover; }
+.lib-badge { position: absolute; left: 6px; bottom: 6px; padding: 1px 7px; border-radius: 999px; font-size: 11px;
+             background: var(--kiso-accent); color: var(--kiso-accent-fg); }
+.lib-badge.quiet { background: #000a; color: #fff; }
+#modal .lib-action { position: absolute; right: 6px; top: 6px; padding: 2px 8px; font-size: 12px; opacity: 0; transition: opacity 0.15s; }
+.lib-tile:hover .lib-action, .lib-tile .lib-action:focus-visible { opacity: 1; }
+.library-dialog .dialog-foot .foot-note { margin-right: auto; }
+/* A linked album's hidden pictures: small, each with Show. */
+.hidden-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; }
+.hidden-row .label { color: var(--kiso-muted); margin-right: 4px; }
+.hidden-tile { position: relative; width: 72px; aspect-ratio: 16 / 10; border-radius: 5px; overflow: hidden; opacity: 0.6; }
+.hidden-tile:hover { opacity: 1; }
+#main .hidden-tile .show { position: absolute; inset: auto 4px 4px auto; padding: 1px 6px; font-size: 11px; opacity: 0; transition: opacity 0.15s; }
+.hidden-tile:hover .show, .hidden-tile .show:focus-visible { opacity: 1; }
 .image-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .image-meta > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

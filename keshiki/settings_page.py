@@ -14,7 +14,7 @@ from typing import Callable, Optional
 
 from . import folders, library
 from ._kiso import settings as kiso_settings
-from .config import ADDON_PACKAGE, DEFAULTS, SUN_MOMENTS, migrate, new_scene, validate
+from .config import ADDON_PACKAGE, DEFAULTS, SUN_MOMENTS, images_in_use, migrate, new_scene, validate
 from .schedule import build_look, day_anchors, light, screen_source, version_starts
 from .schedule import compose as compose_layers
 from .sun import location_sun
@@ -81,7 +81,7 @@ class SettingsBridge(kiso_settings.Bridge):
             if self.renderer:
                 self.renderer.set_config(cfg)
         self._thumbs(cfg)
-        return {"cfg": cfg, "defaults": migrate({})[0], "images": library.list_images(),
+        return {"cfg": cfg, "defaults": migrate({})[0], "images": library.list_images(), "trash": library.list_trash(),
                 "linked": folders.pictures(cfg), "missing": missing,
                 "templates": {k: new_scene(k) for k in ("single", "day", "progress")},
                 "percent": self._percent(), "window": self._window_size()}
@@ -125,8 +125,9 @@ class SettingsBridge(kiso_settings.Bridge):
         names = folders.scan(folder)
         if names is None:
             return {"missing": True}
-        self._thumbs(names)
-        return {"images": names, "linked": {n: library.picture_info(n) for n in names}}
+        hidden = folder.get("hidden") or []
+        self._thumbs(names + hidden)
+        return {"images": names, "hidden": hidden, "linked": {n: library.picture_info(n) for n in names + hidden}}
 
     def _window_size(self) -> list:
         """The main area's shape, so the image picker can show what it will crop."""
@@ -163,9 +164,21 @@ class SettingsBridge(kiso_settings.Bridge):
         added = library.import_files(self.pick_files())
         return {"images": library.list_images(), "added": added}
 
-    def op_delete_image(self, name) -> dict:
-        library.delete(name)
-        return {"images": library.list_images()}
+    # -- the trash: unused pictures go there, and come back or go for good ----------
+
+    def op_trash(self, names) -> dict:
+        # The page offers only pictures no scene uses; the saved settings are checked too.
+        used = set(images_in_use(self.saved()))
+        library.trash([n for n in names if n not in used])
+        return {"images": library.list_images(), "trash": library.list_trash()}
+
+    def op_restore(self, names) -> dict:
+        library.restore(names)
+        return {"images": library.list_images(), "trash": library.list_trash()}
+
+    def op_empty_trash(self, _arg) -> dict:
+        library.empty_trash()
+        return {"trash": library.list_trash()}
 
     def op_open_folder(self, _arg) -> None:
         library.IMAGES.mkdir(parents=True, exist_ok=True)

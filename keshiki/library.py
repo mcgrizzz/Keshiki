@@ -25,9 +25,10 @@ ADDON_DIR = Path(__file__).resolve().parents[1]
 IMAGES = ADDON_DIR / "user_files" / "images"
 THUMBS = ADDON_DIR / "user_files" / "thumbs"
 FOLDERS = ADDON_DIR / "user_files" / "folders"
+TRASH = ADDON_DIR / "user_files" / "trash"
 EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp")
 # Served by Anki's media server under /_addons/<folder>/ (see setWebExports in the root __init__).
-WEB_EXPORTS = r"user_files/(images|thumbs|folders)/.+"
+WEB_EXPORTS = r"user_files/(images|thumbs|folders|trash)/.+"
 THUMB_WIDTH = 480
 
 
@@ -82,12 +83,70 @@ def import_files(paths: List[str]) -> List[str]:
     return names
 
 
-def delete(name: str) -> None:
+def delete(name: str, folder: Optional[Path] = None) -> None:
+    """Delete a picture for good, with its thumbnail and measurements."""
     _stats.pop(name, None)
-    for path in (IMAGES / _safe_name(name), THUMBS / _thumb_name(name), THUMBS / _stats_name(name),
-                 THUMBS / _lights_name(name)):
+    for path in ((folder or IMAGES) / _safe_name(name), *_caches(name)):
         if path.is_file():
             path.unlink()
+
+
+# -- the trash -----------------------------------------------------------------
+# Pictures no scene uses can be moved to user_files/trash, then restored or deleted for good.
+# They keep their thumbnails, which are kept by name.
+
+def _caches(name: str) -> List[Path]:
+    return [THUMBS / _thumb_name(name), THUMBS / _stats_name(name), THUMBS / _lights_name(name)]
+
+
+def _free(folder: Path, name: str) -> Path:
+    """A path for `name` in `folder` that doesn't hold a file yet (name-2.png, ...)."""
+    dest, n = folder / name, 2
+    while dest.exists():
+        dest = folder / f"{Path(name).stem}-{n}{Path(name).suffix}"
+        n += 1
+    return dest
+
+
+def _move(src: Path, folder: Path) -> str:
+    """Move a picture (and its caches) into `folder`, renamed if the name is taken there."""
+    folder.mkdir(parents=True, exist_ok=True)
+    dest = _free(folder, src.name)
+    shutil.move(str(src), str(dest))
+    if dest.name != src.name:
+        _stats.pop(src.name, None)
+        for old, new in zip(_caches(src.name), _caches(dest.name), strict=True):
+            if old.is_file():
+                old.replace(new)
+    return dest.name
+
+
+def trash(names: Iterable[str]) -> List[str]:
+    """Move library pictures to the trash; their names there."""
+    return [_move(IMAGES / _safe_name(n), TRASH) for n in names if (IMAGES / _safe_name(n)).is_file()]
+
+
+def restore(names: Iterable[str]) -> List[str]:
+    """Move pictures back from the trash; their names in the library."""
+    return [_move(TRASH / _safe_name(n), IMAGES) for n in names if (TRASH / _safe_name(n)).is_file()]
+
+
+def list_trash() -> List[Dict[str, str]]:
+    if not TRASH.is_dir():
+        return []
+    files = sorted((p for p in TRASH.iterdir() if p.suffix.lower() in EXTENSIONS), key=lambda p: p.name.lower())
+    url = f"/_addons/{ADDON_DIR.name}/user_files/trash/"
+    return [{"name": p.name, "url": url + quote(p.name),
+             "thumb": thumb_url(p.name) if (THUMBS / _thumb_name(p.name)).exists() else url + quote(p.name)}
+            for p in files]
+
+
+def empty_trash() -> int:
+    """Delete everything in the trash for good; how many pictures went."""
+    gone = [p.name for p in TRASH.iterdir() if p.is_file()] if TRASH.is_dir() else []
+    for name in gone:
+        delete(name, TRASH)
+    return len(gone)
 
 
 def make_thumb(path: Path, name: str = "") -> None:

@@ -411,13 +411,24 @@ def check(app, shots, base):
                 ".then(r => { window._st = r.status; }); })()")
     until(app, lambda: run_js(dlg, "window._st") is not None, 5)
     assert run_js(dlg, "window._st") == 200, "Anki's media server didn't serve the linked picture"
-    assert run_js(dlg, "!$('.album-tile .remove') && !$('.album-add')"), "a folder's pictures are managed in the folder"
+    assert run_js(dlg, "!$('.album-add') && $('.album-tile .remove').title.startsWith('Hide')"), \
+        "a folder's pictures are added in the folder, and only hidden here"
     make_test_image(wall / "dunes.png", 30)
     run_js(dlg, "$('#rescan').click()")
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 4, 5, "Rescan didn't pick up the new picture")
     run_js(dlg, "$('#albumSubfolders').click()")
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 3, 5, "subfolders stayed in")
+    # Hiding a picture leaves it in the folder and out of the album, through rescans; Show brings it back.
+    run_js(dlg, "$$('.album-tile .remove')[0].click()")
+    until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 2, 5, "Hide didn't take it out")
+    assert run_js(dlg, f"{album}.folder.hidden") == [f"@{link}/dunes.png"] and (wall / "dunes.png").is_file()
+    run_js(dlg, "$('#rescan').click()")
+    until(app, lambda: run_js(dlg, "$$('.hidden-tile').length") == 1, 5)
+    assert run_js(dlg, "$$('.album-tile').length") == 2, "a rescan brought a hidden picture back"
     shoot(dlg, "folder-album")
+    run_js(dlg, "$('.hidden-tile .show').click()")
+    until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 3, 5, "Show didn't bring it back")
+    assert run_js(dlg, "!$('.hidden-row')") and run_js(dlg, f"{album}.versions[0].image") == f"@{link}/dunes.png"
     # A folder that's gone keeps its last pictures and says so.
     wall.rename(base / "Wallpapers-away")
     run_js(dlg, "$('#rescan').click()")
@@ -438,8 +449,8 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "$('#status').textContent") == "Saved", 5)
     assert not (library.FOLDERS / link).exists(), "the unused link stayed"
     assert sorted(p.name for p in wall.rglob("*.png")) == ["coast.png", "dunes.png", "hills.png", "lake.png"]
-    print("PASS: a linked folder's pictures are served live, follow rescans, survive a missing folder, "
-          "and dropping the album removes only the link.")
+    print("PASS: a linked folder's pictures are served live, follow rescans, can be hidden, survive a "
+          "missing folder, and dropping the album removes only the link.")
 
     # A folder copied once: an ordinary album of the copied pictures.
     run_js(dlg, "$('#addFolder').click()")
@@ -452,6 +463,36 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, f"!{album}"), 5)
     run_js(dlg, "byText('#nav button', 'Screens').click()")
     print("PASS: a folder copied once becomes an ordinary album.")
+
+    # The picture library: unused pictures go to the trash, come back, or go for good.
+    from keshiki.keshiki import library as lib
+    spares = [str(make_test_image(base / f"spare{i}.png", 60 + 40 * i)) for i in (1, 2)]
+    dlg.kiso_bridge.pick_files = lambda: spares
+    run_js(dlg, "byText('#nav button', 'Scenes').click()")
+    run_js(dlg, "(async () => { const r = await call('import'); images = r.images; })()")
+    until(app, lambda: run_js(dlg, "images.some(i => i.name === 'spare2.png')"), 5)
+    dlg.kiso_bridge.pick_files = lambda: files
+    run_js(dlg, "$('#openLibrary').click()")
+    until(app, lambda: run_js(dlg, "!!$('.library-dialog')"), 5, "no picture library")
+    unused = run_js(dlg, "$$('.lib-tile').filter(t => t.querySelector('.lib-action')).map(t => t.title)")
+    assert {"spare1.png", "spare2.png"} <= set(unused) and "dawn.png" not in unused, unused
+    shoot(dlg, "library")
+    run_js(dlg, "$('#trashUnused').click()")
+    until(app, lambda: run_js(dlg, "trashed.length") == len(unused), 5, "the unused pictures didn't go to the trash")
+    assert not (lib.IMAGES / "spare1.png").exists() and (lib.TRASH / "spare1.png").exists()
+    assert run_js(dlg, "$('#tab-trash').textContent") == f"Trash · {len(unused)}"
+    run_js(dlg, "$('#tab-trash').click()")
+    until(app, lambda: run_js(dlg, "$$('.lib-tile').length") == len(unused), 5)
+    shoot(dlg, "library-trash")
+    run_js(dlg, "$$('.lib-tile').find(t => t.title === 'spare1.png').querySelector('.lib-action').click()")
+    until(app, lambda: (lib.IMAGES / "spare1.png").exists(), 5, "Restore didn't bring it back")
+    run_js(dlg, "$('#emptyTrash').click()")
+    until(app, lambda: run_js(dlg, "!!$('#confirmYes')"), 5, "Empty trash didn't ask")
+    run_js(dlg, "$('#confirmYes').click()")
+    until(app, lambda: run_js(dlg, "trashed.length") == 0, 5, "the trash didn't empty")
+    assert not (lib.TRASH / "spare2.png").exists() and (lib.IMAGES / "spare1.png").exists()
+    run_js(dlg, "$('.library-dialog .dialog-foot .primary').click(); byText('#nav button', 'Screens').click()")
+    print("PASS: unused pictures go to the trash, come back from it, or are deleted for good after asking.")
 
     # Cancel drops unsaved edits and keeps the window open.
     run_js(dlg, "setv($$('input[aria-label=Blur]')[0], '12')")

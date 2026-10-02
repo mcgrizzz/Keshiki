@@ -27,7 +27,7 @@ Your edits show in the main window as you make them. **Save** keeps them and **C
 
 For day cycles that follow the real sun, choose **The sun where I am** on **Day & time**. Click **Find my location** to look up a rough location from your internet address (through ipapi.co). Nothing is sent until you click it. You can also type coordinates instead.
 
-Images are copied into the add-on's `user_files` folder, so they stay when the add-on updates.
+Images are copied into the add-on's `user_files` folder, so they stay when the add-on updates. **Pictures...** on the Scenes page shows which are in use; unused ones go to a trash, where you can restore them or empty it. A folder kept in step isn't copied at all, and × in its album hides a picture without touching the folder.
 
 Keshiki needs Anki 26.08 or newer. Turn off other background add-ons (like Custom Background Image and Gear Icon) while you use it. They draw over its picture.
 

@@ -2,13 +2,13 @@ import shutil
 
 import pytest
 
-from keshiki import library
+from keshiki import folders, library
 
 
 @pytest.fixture
 def lib(tmp_path, monkeypatch):
     """The library's folders, in a temporary user_files."""
-    for attr in ("IMAGES", "THUMBS", "FOLDERS"):
+    for attr in ("IMAGES", "THUMBS", "FOLDERS", "TRASH"):
         monkeypatch.setattr(library, attr, tmp_path / "user_files" / attr.lower())
     return tmp_path
 
@@ -64,3 +64,37 @@ def test_removing_links_never_touches_the_pictures(lib):
     # the folder they point to stays whole.
     shutil.rmtree(library.FOLDERS.parent)
     assert (photos / "a.png").is_file() and (photos / "trip" / "b.png").is_file()
+
+
+def test_the_trash_keeps_pictures_until_it_is_emptied(lib):
+    library.IMAGES.mkdir(parents=True)
+    library.THUMBS.mkdir(parents=True)
+    for name in ("a.png", "b.png"):
+        (library.IMAGES / name).write_bytes(name.encode())
+        (library.THUMBS / library._thumb_name(name)).write_bytes(b"thumb")
+    assert library.trash(["a.png", "gone.png"]) == ["a.png"]
+    assert not (library.IMAGES / "a.png").exists() and [t["name"] for t in library.list_trash()] == ["a.png"]
+    assert library.list_trash()[0]["thumb"].endswith("/thumbs/a.png.jpg")
+    # A second a.png in the trash gets a name of its own, and its thumbnail follows it.
+    (library.IMAGES / "a.png").write_bytes(b"another a")
+    (library.THUMBS / library._thumb_name("a.png")).write_bytes(b"thumb 2")
+    assert library.trash(["a.png"]) == ["a-2.png"]
+    assert (library.THUMBS / library._thumb_name("a-2.png")).read_bytes() == b"thumb 2"
+    assert library.restore(["a.png"]) == ["a.png"] and (library.IMAGES / "a.png").read_bytes() == b"a.png"
+    assert library.empty_trash() == 1
+    assert library.list_trash() == [] and not (library.THUMBS / library._thumb_name("a-2.png")).exists()
+    assert sorted(p.name for p in library.IMAGES.iterdir()) == ["a.png", "b.png"]
+
+
+def test_a_hidden_picture_stays_in_the_folder_but_out_of_the_album(lib):
+    photos = make_folder(lib / "Photos", "a.png", "b.png", "c.png")
+    link = library.link_folder(str(photos))
+    album = {"id": "x", "kind": "album", "versions": [],
+             "folder": {"path": str(photos), "link": link, "subfolders": False, "hidden": [f"@{link}/b.png"]}}
+    cfg = {"scenes": [album]}
+    assert folders.refresh(cfg) == (True, [])
+    assert [v["image"] for v in album["versions"]] == [f"@{link}/a.png", f"@{link}/c.png"]
+    assert (photos / "b.png").is_file() and f"@{link}/b.png" in folders.pictures(cfg)
+    # Gone from the folder, it's forgotten as hidden too.
+    (photos / "b.png").unlink()
+    assert folders.refresh(cfg) == (True, []) and album["folder"]["hidden"] == []

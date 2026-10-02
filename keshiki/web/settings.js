@@ -5,6 +5,7 @@
 
 let images = [];       // the image library
 let linked = {};       // linked folders' pictures (not in the library): name -> {url, thumb}
+let trashed = [];      // pictures in the trash
 let sel = null;        // selected scene id on the Scenes page
 let scrub = null;      // scene editor position: minutes of day or percent done
 
@@ -31,10 +32,13 @@ Object.assign(ICONS, {
 });
 
 const sceneById = (id) => draft.scenes.find((s) => s.id === id);
+const isLinked = (name) => !!name && name.startsWith("@");
 const pictureInfo = (name) => images.find((i) => i.name === name) || linked[name] || {};
 const imageUrl = (name) => pictureInfo(name).url;
 const thumbUrl = (name) => pictureInfo(name).thumb;
 const bg = (url) => (url ? { backgroundImage: `url("${url}")` } : {});
+// Every picture a scene uses (in the draft: an unsaved scene's pictures count too).
+const imagesInUse = () => new Set(draft.scenes.flatMap((sc) => sc.versions.map((v) => v.image)).filter(Boolean));
 // A long folder path, shortened to its last two parts (the full path goes in a tooltip).
 const shortPath = (path) => {
   const parts = path.split(/[\\/]/).filter(Boolean);
@@ -196,6 +200,7 @@ function scenesPage() {
         h("div", { className: "list-actions" },
           h("button", { type: "button", onclick: () => addImagesAsScenes() }, "Add images..."),
           h("button", { type: "button", id: "addFolder", onclick: () => askFolder() }, "Add folder..."),
+          h("button", { type: "button", id: "openLibrary", onclick: () => openLibrary() }, "Pictures..."),
           h("button", { type: "button", onclick: () => addScene("day") }, "New day cycle"),
           singles.length > 1 && h("button", { type: "button", id: "combine", title: "Put single pictures in one album",
                                               onclick: () => askCombine(singles) }, "Combine pictures...")),
@@ -268,6 +273,63 @@ async function askFolder() {
   recount();
 }
 
+// The picture library: each picture marked in use or not, and the trash, where unused
+// pictures wait to be restored or deleted for good.
+function openLibrary(tab = "library") {
+  const tabs = h("div", { className: "tabs", role: "tablist" });
+  const body = h("div", { className: "library-body" });
+  const foot = h("div", { className: "dialog-foot" });
+  const move = async (op, names) => {
+    const res = await call(op, names);
+    if (res.images) images = res.images;
+    trashed = res.trash;
+    draw();
+  };
+  const tile = (img, label, action, onclick) => h("div", { className: "lib-tile", title: img.name },
+    h("span", { className: "lib-thumb", style: bg(img.thumb) }),
+    label && h("span", { className: "lib-badge" + (label === "In use" ? "" : " quiet") }, label),
+    action && h("button", { type: "button", className: "lib-action", onclick }, action));
+  const tabButton = (id, text) => h("button", { type: "button", role: "tab", className: "tab", id: `tab-${id}`,
+    "aria-selected": tab === id ? "true" : "false", onclick: () => { tab = id; draw(); } }, text);
+  const draw = () => {
+    tabs.replaceChildren(tabButton("library", `Library · ${images.length}`), tabButton("trash", `Trash · ${trashed.length}`));
+    const done = h("button", { type: "button", className: "primary", onclick: closeModal }, "Done");
+    if (tab === "library") {
+      const used = imagesInUse();
+      const unused = images.filter((img) => !used.has(img.name));
+      body.replaceChildren(images.length
+        ? h("div", { className: "grid library-grid" }, images.map((img) => used.has(img.name)
+            ? tile(img, "In use") : tile(img, "Unused", "Move to trash", () => move("trash", [img.name]))))
+        : h("p", { className: "help" }, "No pictures yet."));
+      foot.replaceChildren(
+        h("span", { className: "help foot-note" }, unused.length ? `${unused.length} not used by any scene` : "Every picture is in use."),
+        h("button", { type: "button", id: "trashUnused", disabled: !unused.length,
+                      onclick: () => move("trash", unused.map((img) => img.name)) }, `Move ${unused.length} unused to trash`),
+        done);
+    } else {
+      body.replaceChildren(trashed.length
+        ? h("div", { className: "grid library-grid" }, trashed.map((img) => tile(img, null, "Restore", () => move("restore", [img.name]))))
+        : h("p", { className: "help" }, "The trash is empty."));
+      foot.replaceChildren(
+        h("span", { className: "help foot-note" }, trashed.length ? "Restored pictures go back to the library." : ""),
+        h("button", { type: "button", id: "restoreAll", disabled: !trashed.length,
+                      onclick: () => move("restore", trashed.map((img) => img.name)) }, "Restore all"),
+        h("button", { type: "button", className: "danger", id: "emptyTrash", disabled: !trashed.length, onclick: async () => {
+          const ok = await confirmDialog({ title: `Delete ${trashed.length} picture${trashed.length === 1 ? "" : "s"} for good?`,
+            yes: "Empty trash", danger: true, text: "They're deleted from Keshiki's picture folder and can't be brought back." });
+          if (!ok) return;
+          const res = await call("empty_trash");
+          trashed = res.trash;
+          draw();
+        } }, "Empty trash"),
+        done);
+    }
+  };
+  openModal(h("div", { className: "dialog library-dialog" },
+    h("div", { className: "dialog-head" }, h("h2", {}, "Pictures"), tabs), body, foot));
+  draw();
+}
+
 async function rescanFolder(scene) {
   const res = await call("rescan", scene.folder);
   if (!res) return;
@@ -275,6 +337,7 @@ async function rescanFolder(scene) {
   if (res.missing) S.missing.push(scene.id);
   else {
     Object.assign(linked, res.linked);
+    scene.folder.hidden = res.hidden || [];
     scene.versions = res.images.map((image) => ({ label: "", image }));
     albumShown = Math.min(albumShown, Math.max(0, scene.versions.length - 1));
   }
@@ -406,8 +469,11 @@ function albumGrid(scene, preview) {
                     if (folder) pickImage(v.image, () => {}, null, -1, { positionOnly: true });
                     else pickImage(v.image, (name) => { v.image = name; changed(true); });
                   } }, v.image ? "" : "+"),
-    !folder && h("button", { type: "button", className: "icon-only remove", title: "Take it out of the album", "aria-label": `Remove ${v.image}`,
+    h("button", { type: "button", className: "icon-only remove",
+                  title: folder ? "Hide it from the album (it stays in the folder)" : "Take it out of the album",
+                  "aria-label": `${folder ? "Hide" : "Remove"} ${v.image}`,
                   onclick: () => {
+                    if (folder) folder.hidden = [...(folder.hidden || []), v.image];
                     scene.versions.splice(i, 1);
                     albumShown = Math.max(0, Math.min(albumShown, scene.versions.length - 1));
                     changed(true);
@@ -422,10 +488,19 @@ function albumGrid(scene, preview) {
     folder && (S.missing || []).includes(scene.id)
       && h("p", { className: "error folder-missing" }, "Can't find this folder (moved, renamed, or a drive that isn't connected). Showing its last pictures."),
     h("p", { className: "help" }, folder
-      ? "Kept in step with the folder: add, change or remove pictures there. On a screen they take turns with its other scenes."
+      ? "Kept in step with the folder: add, change or remove pictures there; × hides one here and leaves it in the folder. On a screen they take turns with its other scenes."
       : "On a screen, the album's pictures take turns with its other scenes, one each time its shuffle changes."),
     h("div", { className: "album" }, ...tiles,
-      !folder && h("button", { type: "button", className: "album-add", onclick: () => addImagesToAlbum(scene) }, "+ Add images...")));
+      !folder && h("button", { type: "button", className: "album-add", onclick: () => addImagesToAlbum(scene) }, "+ Add images...")),
+    // Hidden pictures (still in the folder): each can come back.
+    folder && (folder.hidden || []).length > 0 && h("div", { className: "hidden-row" },
+      h("span", { className: "label" }, `Hidden · ${folder.hidden.length}`),
+      ...folder.hidden.map((name) => h("div", { className: "hidden-tile", title: name },
+        h("span", { className: "lib-thumb", style: bg(thumbUrl(name)) }),
+        h("button", { type: "button", className: "lib-action show", onclick: () => {
+          folder.hidden = folder.hidden.filter((n) => n !== name);
+          rescanFolder(scene);   // back in its place in the folder's order
+        } }, "Show")))));
 }
 
 function versionTable(scene, preview) {
@@ -859,17 +934,15 @@ function pickImage(current, use, scene = null, index = -1, { positionOnly = fals
     const used = draft.scenes.some((sc) => sc.versions.some((v) => v.image === chosen));
     side.replaceChildren(box, help, align || "",
       h("div", { className: "image-meta" }, h("span", { className: "muted", title: chosen }, chosen),
-        used ? h("span", { className: "muted" }, "Used by a scene")
-          : h("button", { type: "button", className: "link danger", id: "deleteImage", onclick: async () => {
-              const ok = await confirmDialog({ title: "Delete this picture?", yes: "Delete picture", danger: true,
-                text: "It's removed from Keshiki's picture folder right away; Cancel can't bring it back." });
-              if (!ok) return;
-              const res = await call("delete_image", chosen);
+        used || isLinked(chosen) ? h("span", { className: "muted" }, "Used by a scene")
+          : h("button", { type: "button", className: "link", id: "trashImage",
+                          title: "Pictures → Trash brings it back, or deletes it for good", onclick: async () => {
+              const res = await call("trash", [chosen]);
               images = res.images;
-              delete draft.images[chosen];
+              trashed = res.trash;
               chosen = images[0] ? images[0].name : null;
-              drawGrid(); drawSide(); changed();
-            } }, "Delete image")));
+              drawGrid(); drawSide();
+            } }, "Move to trash")));
     place();
   };
   // Choosing a picture while lined up gives it the scene's position.
@@ -1073,6 +1146,7 @@ Kiso.setup({
     document.documentElement.style.setProperty("--kk-window", String(S.window[0] / S.window[1]));
     images = state.images;
     linked = state.linked || {};
+    trashed = state.trash || [];
     S.missing = state.missing || [];
   },
   // Unsaved edits preview live in the main window (and in the page's own previews).

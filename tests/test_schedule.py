@@ -214,7 +214,7 @@ def test_light_grades_both_pictures_of_a_fade_and_adds_the_tint():
     stats = {"a": {"mean": [0.2] * 3, "std": [0.1] * 3}, "b": {"mean": [0.6] * 3, "std": [0.1] * 3}}
     layers = [{"image": "a", "opacity": 1.0}, {"image": "b", "opacity": 0.25}]
     anchors = day_anchors({"source": "manual", "sunrise": "06:00", "sunset": "19:00"})
-    out = light(layers, {"match": True, "match_strength": 100, "tint": True, "tint_strength": 100},
+    out = light(layers, {"match": True, "match_strength": 100, "tint": True, "tint_strength": 100, "scope": "all"},
                 19 * 60, anchors, stats.get)
     # A quarter into the fade the light has already moved further (it leads, finishing at 60%):
     # smoothstep(0.25 / 0.6) = 0.3762, at the fixed 80% strength.
@@ -265,7 +265,7 @@ def test_all_done_switches_both_screens_to_the_done_scenes():
 def test_lights_are_kept_in_night_pictures_but_a_day_picture_darkens_all_over():
     stats = {"night": {"mean": [0.1, 0.12, 0.25], "std": [0.1] * 3}, "noon": {"mean": [0.6, 0.7, 0.9], "std": [0.2] * 3}}
     anchors = day_anchors({"source": "manual", "sunrise": "06:00", "sunset": "19:00"})
-    cfg = {"tint": True, "tint_strength": 100}
+    cfg = {"tint": True, "tint_strength": 100, "scope": "all"}
     night = light([{"image": "night", "opacity": 1.0}], cfg, 23 * 60, anchors, stats.get)[0]
     noon = light([{"image": "noon", "opacity": 1.0}], cfg, 23 * 60, anchors, stats.get)[0]
     assert night["glow"] > 0.9 and noon["glow"] == 0
@@ -276,7 +276,7 @@ def test_a_night_picture_brings_its_lights_and_a_day_picture_doesnt():
     stats = {"night": {"mean": [0.1, 0.12, 0.25], "std": [0.1] * 3}, "noon": {"mean": [0.6, 0.7, 0.9], "std": [0.2] * 3}}
     anchors = day_anchors({"source": "manual", "sunrise": "06:00", "sunset": "19:00"})
     lights = {"night": "/lights/night", "noon": "/lights/noon"}.get
-    cfg = {"tint": True, "tint_strength": 100}
+    cfg = {"tint": True, "tint_strength": 100, "scope": "all"}
     assert light([{"image": "night", "opacity": 1.0}], cfg, 23 * 60, anchors, stats.get, lights)[0]["lights"] == "/lights/night"
     assert "lights" not in light([{"image": "noon", "opacity": 1.0}], cfg, 23 * 60, anchors, stats.get, lights)[0]
     # By day there's nothing to shine.
@@ -286,27 +286,27 @@ def test_a_night_picture_brings_its_lights_and_a_day_picture_doesnt():
 def test_bloom_rides_along_with_a_pictures_lights():
     stats = {"night": {"mean": [0.1, 0.12, 0.25], "std": [0.1] * 3}}
     anchors = day_anchors({"source": "manual", "sunrise": "06:00", "sunset": "19:00"})
-    layer = light([{"image": "night", "opacity": 1.0}], {"tint": True, "tint_strength": 100, "bloom": 80},
+    layer = light([{"image": "night", "opacity": 1.0}], {"tint": True, "tint_strength": 100, "bloom": 80, "scope": "all"},
                   23 * 60, anchors, stats.get, lambda n: "/l")[0]
     assert layer["bloom"] == 0.8
 
 
 def test_version_3_drops_the_smoothing_switch():
     cfg, changed = migrate({"light": {"tint": True, "match": False, "match_strength": 40}, "config_version": 2})
-    assert changed and cfg["light"] == {"tint": True, "tint_strength": 70, "bloom": 50, "scope": "all"} and cfg["config_version"] == 3
+    assert changed and cfg["light"] == {"tint": True, "tint_strength": 70, "bloom": 50, "scope": "day"} and cfg["config_version"] == 3
 
 
 def test_daylight_can_light_only_day_cycles():
     stats = {"a": {"mean": [0.4] * 3, "std": [0.1] * 3}}
     anchors = day_anchors({"source": "manual", "sunrise": "06:00", "sunset": "19:00"})
     layers = [{"image": "a", "opacity": 1.0}]
-    cfg = {"tint": True, "tint_strength": 100, "scope": "day"}
+    cfg = {"tint": True, "tint_strength": 100}   # by default, only day cycles
     assert "light" in light(layers, cfg, 19 * 60, anchors, stats.get, kind="day")[0]
     assert "light" not in light(layers, cfg, 19 * 60, anchors, stats.get, kind="single")[0]
     assert "light" in light(layers, dict(cfg, scope="all"), 19 * 60, anchors, stats.get, kind="single")[0]
     # On a screen: a single picture stays as it is.
     built, _ = migrate({})
-    built["light"].update(tint=True, scope="day")
+    built["light"]["tint"] = True
     built["scenes"] = [{"id": "s", "name": "S", "kind": "single", "versions": [{"label": "", "image": "a"}]}]
     built["screens"]["main"]["scenes"] = ["s"]
     look = build_look(built, "main", minute_of_day=19 * 60, now_minutes=0, launch_seed=0, sun=None,

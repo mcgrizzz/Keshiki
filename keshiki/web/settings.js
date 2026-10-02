@@ -1154,8 +1154,8 @@ function lightPanel() {
         h("div", { className: "light-controls" },
           h("div", { className: "field" }, h("span", { className: "label" }, "Applies to"),
             h("div", { className: "choices inline" },
-              radio("lightScope", l.scope !== "day", "Every scene", () => { l.scope = "all"; changed(true); }),
-              radio("lightScope", l.scope === "day", "Day cycles only", () => { l.scope = "day"; changed(true); }))),
+              radio("lightScope", l.scope !== "all", "Day cycles only", () => { l.scope = "day"; changed(true); }),
+              radio("lightScope", l.scope === "all", "Every scene", () => { l.scope = "all"; changed(true); }))),
           slider("Strength", l.tint_strength, 0, 100, "%", (v) => { l.tint_strength = v; drawStrip(); }),
           h("div", { className: "field" }, h("span", { className: "label" }, "Today"),
             h("div", {}, h("div", { className: "daylight-wrap" }, strip, hand, input), ticks)),
@@ -1171,7 +1171,7 @@ function lightPanel() {
 // (a day cycle shows its version for the chosen time; an album its first picture). Lighting
 // only day cycles, it's the first day cycle, and there's no preview without one.
 function lightScene() {
-  const days = draft.light.scope === "day";
+  const days = draft.light.scope !== "all";
   const scene = [...draft.screens.main.scenes.map(sceneById), ...draft.scenes]
     .find((sc) => sc && sc.versions.some((v) => v.image) && (!days || sc.kind === "day"));
   if (!scene) return null;

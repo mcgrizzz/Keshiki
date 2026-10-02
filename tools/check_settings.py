@@ -592,11 +592,12 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "$('.light-preview .readout').textContent") == "19:00", 5, "the strip didn't move the preview")
     run_js(dlg, "$('main').scrollTop = $('main').scrollHeight")
     shoot(dlg, "day-light")
-    # Lighting only day cycles: the preview shows one (a day cycle's picture); then back to every scene.
-    run_js(dlg, "byText('label', 'Day cycles only').querySelector('input').click()")
-    until(app, lambda: run_js(dlg, "draft.light.scope") == "day", 5)
-    until(app, lambda: run_js(dlg, "$$('.light-preview .keshiki-layer').length") > 0, 5, "no light preview for day cycles only")
+    # By default only day cycles are lit, and the preview shows one; every scene can be.
+    assert run_js(dlg, "draft.light.scope === 'day' && byText('label', 'Day cycles only').querySelector('input').checked")
     run_js(dlg, "byText('label', 'Every scene').querySelector('input').click()")
+    until(app, lambda: run_js(dlg, "draft.light.scope") == "all", 5)
+    until(app, lambda: run_js(dlg, "$$('.light-preview .keshiki-layer').length") > 0, 5, "no light preview for every scene")
+    run_js(dlg, "byText('label', 'Day cycles only').querySelector('input').click()")
     run_js(dlg, "byText('label', 'Light the pictures by the sun').querySelector('input').click(); $('main').scrollTop = 0")
     print("PASS: the Day & time page looks up a rough location once, works out today's sun, and previews the light.")
 

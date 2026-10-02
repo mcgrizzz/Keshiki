@@ -97,7 +97,7 @@ def light(layers: List[dict], cfg: dict, minute: float, anchors: Dict[str, Any],
           image_lights: Callable[[str], Optional[str]] = lambda n: None, kind: Optional[str] = None) -> List[dict]:
     """The layers with their colour grade (fades), daylight matrix, and at night their
     own lights (an image of just the lights) and how much they shine (glow). Daylight
-    lights only day cycles (`kind` "day") when its scope says so."""
+    lights only day cycles (`kind` "day") unless its scope is "all"."""
     layers = [dict(layer) for layer in layers]
     # Smoothing the colour between versions: always on (it helps or changes nothing).
     strength = MATCH_STRENGTH
@@ -110,7 +110,7 @@ def light(layers: List[dict], cfg: dict, minute: float, anchors: Dict[str, Any],
             lead = lead * lead * (3 - 2 * lead)
             layers[0]["grade"] = grade_toward(below, above, round(lead * strength, 4))
             layers[1]["grade"] = grade_toward(above, below, round((1 - lead) * strength, 4))
-    if cfg.get("tint") and anchors.get("curve") and (cfg.get("scope") != "day" or kind == "day"):
+    if cfg.get("tint") and anchors.get("curve") and (cfg.get("scope", "day") == "all" or kind == "day"):
         # Per picture: how much night it gets depends on whether it already shows night.
         elevation = elevation_at(anchors["curve"], minute)
         strength = _num(cfg.get("tint_strength", 70)) / 100

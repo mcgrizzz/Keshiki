@@ -37,7 +37,7 @@
         "tint": false,
         "tint_strength": 70,
         "bloom": 50,
-        "scope": "all"
+        "scope": "day"
     },
     "config_version": 2
 }

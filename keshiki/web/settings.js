@@ -206,7 +206,7 @@ function scenesPage() {
                                               onclick: () => askCombine(singles) }, "Combine pictures...")),
         h("div", { className: "scene-list" }, draft.scenes.map((s) =>
           h("button", { type: "button", className: "scene-item", "aria-current": s.id === sel ? "true" : "false",
-                        onclick: () => { stopPlaying(); sel = s.id; scrub = null; albumShown = 0; call("end_moment"); render(); } },
+                        onclick: () => { selectScene(s.id); render(); } },
             h("span", { className: "thumb", style: bg(sceneThumb(s)) }),
             h("span", { className: "item-name", title: s.name }, s.name), h("small", {}, kindLabel(s)))))),
       scene ? sceneEditor(scene) : h("div", { className: "panel blank" }, h("p", {}, "Add images or start a day cycle to make your first scene.")))];
@@ -222,8 +222,7 @@ async function addImagesAsScenes() {
     ? { kind: "single", image: res.added[0] } : { kind: "album", images: res.added });
   draft.scenes.push(scene);
   if (!draft.screens.main.scenes.length) draft.screens.main.scenes.push(scene.id);
-  sel = scene.id;
-  albumShown = 0;
+  selectScene(scene.id);
   changed(true);
 }
 
@@ -245,8 +244,7 @@ async function askFolder() {
     Object.assign(linked, res.linked);
     draft.scenes.push(res.scene);
     if (!draft.screens.main.scenes.length) draft.screens.main.scenes.push(res.scene.id);
-    sel = res.scene.id;
-    albumShown = 0;
+    selectScene(res.scene.id);
     page = "scenes";
     changed(true);
   } }, "Add");
@@ -365,8 +363,7 @@ async function combineIntoAlbum(singles, name) {
   }
   draft.scenes = draft.scenes.filter((sc) => !ids.has(sc.id));
   draft.scenes.push(album);
-  sel = album.id;
-  albumShown = 0;
+  selectScene(album.id);
   changed(true);
 }
 
@@ -393,11 +390,20 @@ function askCombine(singles) {
   count();
 }
 
+// Open a scene in the editor (or none): it starts at now, and a moment scrubbed in the scene
+// before stops showing in Anki's main window.
+function selectScene(id) {
+  stopPlaying();
+  if (scrub !== null) call("end_moment");
+  sel = id;
+  scrub = null;
+  albumShown = 0;
+}
+
 async function addScene(kind) {
   const scene = await call("new_scene", { kind });
   draft.scenes.push(scene);
-  sel = scene.id;
-  scrub = null;
+  selectScene(scene.id);
   page = "scenes";
   changed(true);
 }
@@ -406,10 +412,9 @@ async function deleteScene(scene) {
   const ok = await confirmDialog({ title: `Delete "${scene.name}"?`, yes: "Delete scene", danger: true,
     text: "It comes off every screen that shows it; its pictures stay. Until you save, Cancel brings it back." });
   if (!ok) return;
-  stopPlaying();
+  selectScene(null);
   draft.scenes = draft.scenes.filter((s) => s !== scene);
   for (const screen of Object.values(draft.screens)) screen.scenes = screen.scenes.filter((id) => id !== scene.id);
-  sel = null;
   changed(true);
 }
 
@@ -806,7 +811,7 @@ function updateScenePreview(preview, redrawRibbon) {
   const shown = scene.kind !== "album" ? scene
     : { ...scene, kind: "single", versions: scene.versions.slice(albumShown, albumShown + 1) };
   return call("compose", { scene: shown, day: draft.day, light: draft.light, position, images: draft.images,
-                           show: scrub !== null, cfg: draft, fade: ease }).then((res) => {
+                           show: timed(scene) && scrub !== null, cfg: draft, fade: ease }).then((res) => {
     // A late answer for a scene no longer on screen changes nothing.
     if (!res || res.error || sceneById(sel) !== scene || !preview.isConnected) return;
     S.anchors = res.anchors;

@@ -392,6 +392,10 @@ def check(app, shots, base):
         make_test_image(wall / name, hue)
     dlg.kiso_bridge.pick_folder = lambda: str(wall)
     run_js(dlg, "byText('#nav button', 'Scenes').click()")
+    # A day cycle scrubbed to a moment shows it in Anki's window; opening the new album ends that.
+    run_js(dlg, "byText('.scene-item span', 'Day cycle').parentElement.click()")
+    run_js(dlg, "setv($('.ribbon input'), 780)")
+    until(app, lambda: renderer.scene_look is not None, 5, "the scrubbed moment didn't reach Anki's window")
     run_js(dlg, "$('#addFolder').click()")
     until(app, lambda: run_js(dlg, "($('.folder-count') || {}).textContent") == "3 pictures", 5, "the folder dialog didn't count")
     run_js(dlg, "$('#folderSubfolders').click()")
@@ -407,6 +411,12 @@ def check(app, shots, base):
                                                                   f"@{link}/trip/coast.png"]
     assert (library.FOLDERS / link).is_symlink(), "no link to the folder"
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 3, 5)
+    until(app, lambda: renderer.scene_look is None, 5, "the day cycle's moment stayed in Anki's window")
+    run_js(dlg, "$$('.album-tile .pick')[0].click()")
+    until(app, lambda: run_js(dlg, "!!$('.position-dialog')"), 5, "a linked picture didn't open for positioning")
+    pump(app, 0.5)
+    assert renderer.scene_look is None, "an album's preview went to Anki's window"
+    run_js(dlg, "$('.position-dialog .primary').click()")
     run_js(dlg, f"(() => {{ window._st = null; fetch(imageUrl({album}.versions[2].image))"
                 ".then(r => { window._st = r.status; }); })()")
     until(app, lambda: run_js(dlg, "window._st") is not None, 5)
@@ -418,6 +428,17 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 4, 5, "Rescan didn't pick up the new picture")
     run_js(dlg, "$('#albumSubfolders').click()")
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 3, 5, "subfolders stayed in")
+    # On a screen, hiding the picture Anki's window shows moves it off at once, before saving.
+    main_before = run_js(dlg, "draft.screens.main.scenes.slice()")
+    run_js(dlg, f"draft.screens.main.scenes = [{album}.id]; changed(true)")
+    shown = lambda: renderer.look()["layers"][-1]["src"].split("/")[-1]  # noqa: E731
+    until(app, lambda: renderer.preview is not None and shown() in ("hills.png", "lake.png", "dunes.png"), 5)
+    showing = shown()
+    run_js(dlg, f"$$('.album-tile .remove')[{album}.versions.findIndex(v => v.image.endsWith('/{showing}'))].click()")
+    until(app, lambda: shown() != showing, 5, "Anki's window kept showing a hidden picture")
+    run_js(dlg, f"Object.assign({album}.folder, {{ hidden: [] }}); draft.screens.main.scenes = {main_before}; changed(true)")
+    run_js(dlg, "$('#rescan').click()")
+    until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 3, 5)
     # Hiding a picture leaves it in the folder and out of the album, through rescans; Show brings it back.
     assert float(run_js(dlg, "getComputedStyle($('.album-tile .remove')).opacity")) >= 0.8, "the Hide × only shows on hover"
     run_js(dlg, "$$('.album-tile .remove')[0].click()")

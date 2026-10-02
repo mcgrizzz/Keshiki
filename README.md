@@ -8,7 +8,7 @@ Background scenes for Anki's main window that follow the sun through the day, an
 - **Day cycles.** Give a scene dawn, day, dusk and night versions. Each fades in between two moments of the sun you choose (from first light to sunrise, say), at a set time, or once the version before it is fully in, for the real sun where you are or the sunrise and sunset times you set.
 - **Light by the sun.** Optionally colour any picture by the sun's height: warm low sun, plain midday, blue twilight and a dim, faded night, based on published daylight measurements and night-vision research. At night, a picture's own lights (lit windows, lamps, stars) stay lit and glow softly.
 - **All done for today.** Show different scenes once nothing is left to study in any deck.
-- **Shuffle.** Pick several scenes for a screen and Keshiki crossfades between them every 15 minutes up to once a day.
+- **Shuffle.** Put several scenes on a screen, or add a batch of pictures straight to it, and they take turns: every 15 minutes up to once a day, or each time Anki starts. A screen with one scene keeps it.
 - **Readable.** Dim and blur are set separately for the deck list and for studying, and dimming follows Anki's light or dark theme.
 
 ## Using it

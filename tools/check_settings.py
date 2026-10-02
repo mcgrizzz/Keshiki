@@ -319,6 +319,24 @@ def check(app, shots, base):
         "Deck list and Studying panels differ in height"
     print("PASS: save writes the config, keeps the window open and ends the live preview.")
 
+    # A screen's scenes take turns: the deck list (four scenes) can shuffle; studying, with
+    # one, says how. Its own "Add images..." puts new pictures on it as scenes.
+    main_card, study_card = "$$('.two > .panel')[0]", "$$('.two > .panel')[1]"
+    assert run_js(dlg, f"!!{main_card}.querySelector('select.shuffle')")
+    assert run_js(dlg, f"!{study_card}.querySelector('select.shuffle') && !!{study_card}.querySelector('.shuffle-hint')")
+    extra = make_test_image(base / "harbour.png", 160)
+    dlg.kiso_bridge.pick_files = lambda: [str(extra)]
+    run_js(dlg, f"{study_card}.querySelector('.add-images').click()")
+    until(app, lambda: run_js(dlg, "draft.screens.study.scenes.length") == 2, 5, "Add images didn't add to studying")
+    assert run_js(dlg, "sceneById(draft.screens.study.scenes[1]).versions[0].image") == "harbour.png"
+    assert run_js(dlg, f"!!{study_card}.querySelector('select.shuffle')"), "no shuffle with two scenes"
+    assert run_js(dlg, "draft.screens.main.scenes.length") == 4
+    shoot(dlg, "screens-shuffle")
+    dlg.kiso_bridge.pick_files = lambda: files
+    run_js(dlg, "$('#cancel').click()")
+    until(app, lambda: run_js(dlg, "draft.screens.study.scenes.length") == 1, 5)
+    print("PASS: each screen shows its shuffle, and adds pictures as scenes of its own.")
+
     # Cancel drops unsaved edits and keeps the window open.
     run_js(dlg, "setv($$('input[aria-label=Blur]')[0], '12')")
     until(app, lambda: run_js(dlg, "!$('#cancel').disabled"), 5)

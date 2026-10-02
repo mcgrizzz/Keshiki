@@ -125,7 +125,7 @@ function welcome() {
   return h("div", { className: "panel blank" },
     h("h2", {}, "Start with a picture"),
     h("p", {}, "Add a few images and they'll appear behind Anki's main window. Later you can turn them into scenes that follow the time of day or your progress through today's reviews."),
-    h("button", { type: "button", className: "primary", onclick: () => addImagesAsScenes(true) }, "Add images..."));
+    h("button", { type: "button", className: "primary", onclick: () => addImagesAsScenes(draft.screens.main) }, "Add images..."));
 }
 
 function sceneChooser(screen) {
@@ -146,10 +146,16 @@ function sceneChooser(screen) {
             h("button", { type: "button", "aria-label": `Remove ${scene.name}`, title: "Remove",
                           onclick: () => { screen.scenes = screen.scenes.filter((x) => x !== id); changed(true); } }, "×"));
         }),
-        options.length ? add : null)),
-    screen.scenes.length > 1 && h("div", { className: "field" }, h("label", {}, "Shuffle every"),
-      h("select", { onchange: (e) => { screen.every = Number(e.target.value); changed(); } },
-        EVERY.map(([v, label]) => h("option", { value: v, selected: screen.every === v }, label)))),
+        options.length ? add : null,
+        h("button", { type: "button", className: "link add-images", title: "Each picture becomes a scene on this screen",
+                      onclick: () => addImagesAsScenes(screen) }, "Add images..."))),
+    // A screen's scenes take turns; with one there's nothing to shuffle yet, so say how.
+    screen.scenes.length > 1
+      ? h("div", { className: "field" }, h("label", {}, "Shuffle every"),
+          h("select", { className: "shuffle", onchange: (e) => { screen.every = Number(e.target.value); changed(); } },
+            EVERY.map(([v, label]) => h("option", { value: v, selected: screen.every === v }, label))))
+      : screen.scenes.length === 1 && h("div", { className: "field" }, h("span", { className: "label" }, "Shuffle"),
+          h("span", { className: "help shuffle-hint" }, "Add another scene, or a few images, and they take turns here.")),
   ];
 }
 
@@ -171,7 +177,7 @@ function scenesPage() {
     h("div", { className: "scenes" },
       h("div", {},
         h("div", { className: "list-actions" },
-          h("button", { type: "button", onclick: () => addImagesAsScenes(false) }, "Add images..."),
+          h("button", { type: "button", onclick: () => addImagesAsScenes() }, "Add images..."),
           h("button", { type: "button", onclick: () => addScene("day") }, "New day cycle")),
         h("div", { className: "scene-list" }, draft.scenes.map((s) =>
           h("button", { type: "button", className: "scene-item", "aria-current": s.id === sel ? "true" : "false",
@@ -181,14 +187,17 @@ function scenesPage() {
       scene ? sceneEditor(scene) : h("div", { className: "panel blank" }, h("p", {}, "Add images or start a day cycle to make your first scene.")))];
 }
 
-async function addImagesAsScenes(useThem) {
+// Each picture becomes a single-image scene. Given a screen, they all go on it (where
+// they take turns); otherwise the deck list gets the first if it has nothing yet.
+async function addImagesAsScenes(screen = null) {
   const res = await call("import");
   if (!res || res.error) return;
   images = res.images;
   for (const name of res.added) {
     const scene = await call("new_scene", { kind: "single", image: name });
     draft.scenes.push(scene);
-    if (useThem || !draft.screens.main.scenes.length) draft.screens.main.scenes.push(scene.id);
+    if (screen) screen.scenes.push(scene.id);
+    else if (!draft.screens.main.scenes.length) draft.screens.main.scenes.push(scene.id);
     sel = sel || scene.id;
   }
   changed(true);

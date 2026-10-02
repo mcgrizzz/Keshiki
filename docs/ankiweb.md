@@ -6,9 +6,9 @@ latest release's `.ankiaddon`; without it, paste each section by hand.
 
 ## Title
 
-A one-line description, under 80 characters. Anki lists the add-on under this title when
-it's installed from AnkiWeb (`manifest.json`'s name is for installs from a file); the words
-after the name are what people search for.
+A one-line description, under 80 characters; the words after the name are what people
+search for. Anki's add-on list shows `manifest.json`'s name instead (a name packaged in the
+file wins over AnkiWeb's title).
 
 ```text
 🖼️ Keshiki - Background scenes that follow the sun

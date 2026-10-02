@@ -2,7 +2,7 @@
 
 Background scenes for Anki's main window that follow the sun through the day, and can change once you're done studying.
 
-![The Screens page: what shows behind the deck list and while you study](docs/images/settings-screens.png)
+![A day-cycle scene at dawn, midday, dusk, night and midnight](docs/images/scenes-through-the-day.webp)
 
 - **One picture across the whole window.** The toolbar, the main area and the bottom bar show one continuous image, with no seams where they meet.
 - **Day cycles.** Give a scene dawn, day, dusk and night versions. Each fades in between two moments of the sun you choose (from first light to sunrise, say), at a set time, or once the version before it is fully in, for the real sun where you are or the sunrise and sunset times you set.
@@ -21,7 +21,7 @@ Open **Tools → Keshiki Backgrounds...**.
 
 Your edits show in the main window as you make them. **Save** keeps them and **Cancel** puts things back.
 
-![A day-cycle scene](docs/images/settings-scene.png)
+![The Screens page: what shows behind the deck list and while you study](docs/images/settings-screens.png)
 
 <sub>Screenshots use stills from <i>Spirited Away</i> © Studio Ghibli.</sub>
 

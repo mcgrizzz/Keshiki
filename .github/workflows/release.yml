@@ -1,0 +1,21 @@
+name: Release
+
+# Push a tag v<version> (pyproject.toml's version), or run it by hand to release v<version>
+# from the chosen branch: tests, then a draft release with the .ankiaddon and its .sha256.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+  release:
+    needs: ci
+    permissions:
+      contents: write
+    uses: mcgrizzz/Kiso/.github/workflows/addon-release.yml@main

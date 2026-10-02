@@ -1,0 +1,17 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: mcgrizzz/Kiso/.github/workflows/addon-ci.yml@main
+    with:
+      floor-anki: "26.8.1"          # min_point_version 260800
+      qt-checks: tools/qt_checks.sh

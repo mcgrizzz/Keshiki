@@ -48,7 +48,7 @@ blank lines. `{{version}}` and `{{release_url}}` are the release the helper atta
 ```markdown
 Background scenes for Anki's main window that follow the sun through the day, and can change once you're done studying.
 
-![Anki's deck list over a day-cycle scene at 13:00, 18:15 and 21:30](https://raw.githubusercontent.com/mcgrizzz/Keshiki/main/docs/images/main-through-the-day.jpg)
+![Anki's deck list over a day-cycle scene, blending from 13:00 through 18:15 to 21:30](https://raw.githubusercontent.com/mcgrizzz/Keshiki/main/docs/images/main-through-the-day.jpg)
 
 ### Features
 

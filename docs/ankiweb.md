@@ -48,18 +48,26 @@ blank lines. `{{version}}` and `{{release_url}}` are the release the helper atta
 ```markdown
 Background scenes for Anki's main window that follow the sun through the day, and can change once you're done studying.
 
-![A day-cycle scene at dawn, midday, dusk, night and midnight](https://raw.githubusercontent.com/mcgrizzz/Keshiki/main/docs/images/scenes-through-the-day.webp)
+![Anki's deck list over a day-cycle scene at 13:00, 18:15 and 21:30](https://raw.githubusercontent.com/mcgrizzz/Keshiki/main/docs/images/main-through-the-day.jpg)
 
 ### Features
 
 * **One picture across the whole window.** The toolbar, the deck list and the bottom bar show one continuous image, with no seams.
 * **Day cycles.** Give a scene dawn, day, dusk and night versions. Each fades in between moments of the sun you choose (first light to sunrise, say), at a set time, or once the one before it is fully in, for the real sun where you are or the times you set.
-* **Light by the sun.** Optionally colour any picture by the sun's height: warm low sun, plain midday, blue twilight and a dim night. At night a picture's own lights (lit windows, lamps, stars) stay lit and glow softly.
+* **Light by the sun.** Optionally colour your day cycles (or every picture) by the sun's height: warm low sun, plain midday, blue twilight and a dim night. At night a picture's own lights (lit windows, lamps, stars) stay lit and glow softly.
 * **All done for today.** Different scenes once nothing is left to study in any deck.
 * **Albums and shuffle.** Add a batch of pictures, or a whole folder (it can stay in step as you add to it), and they become an album; on a screen its pictures take turns, every 15 minutes up to once a day.
 * **Readable.** Dim and blur set separately for the deck list and for studying.
 
-After installing, restart Anki and open **Tools → 🖼️ Keshiki**. Your location is only looked up if you click **Find my location**.
+![Reviewing a card over the night version, dimmed and blurred](https://raw.githubusercontent.com/mcgrizzz/Keshiki/main/docs/images/main-review.jpg)
+
+### Setting it up
+
+After installing, restart Anki and open **Tools → 🖼️ Keshiki**. Drag along a day cycle's timeline, or press play to watch the next 24 hours; Anki's main window follows along.
+
+![The day-cycle editor through the day](https://raw.githubusercontent.com/mcgrizzz/Keshiki/main/docs/images/scenes-through-the-day.webp)
+
+Your location is only looked up if you click **Find my location**.
 
 > Needs Anki 26.08 or newer. Turn off other background add-ons (like Custom Background Image and Gear Icon) while you use it.
 

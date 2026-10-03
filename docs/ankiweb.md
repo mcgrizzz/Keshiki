@@ -48,6 +48,8 @@ blank lines. `{{version}}` and `{{release_url}}` are the release the helper atta
 ```markdown
 Background scenes for Anki's main window that follow the sun through the day, and can change once you're done studying.
 
+Or just set one picture as a plain background: it runs as one image behind the top and bottom bars too, with no seams, strips or odd edges.
+
 ![Anki's deck list over a day-cycle scene through a whole day](https://raw.githubusercontent.com/mcgrizzz/Keshiki/main/docs/images/main-through-the-day.webp)
 
 ### Features

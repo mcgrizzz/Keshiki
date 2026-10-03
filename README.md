@@ -31,6 +31,10 @@ Images are copied into the add-on's `user_files` folder, so they stay when the a
 
 Keshiki needs Anki 26.08 or newer. Turn off other background add-ons (like Custom Background Image and Gear Icon) while you use it. They draw over its picture.
 
+## More add-ons
+
+- [Tsunagi](https://github.com/mcgrizzz/Tsunagi) connects your Anki collection to dictionary tools, mining apps and scripts. It works with existing AnkiConnect tools, and its own API adds collection queries, FSRS and change events.
+
 ## Development
 
 Keshiki's plumbing (wiring with Anki, settings page shell, live reload, build

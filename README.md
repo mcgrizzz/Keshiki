@@ -11,6 +11,8 @@ Background scenes for Anki's main window that follow the sun through the day, an
 - **Albums and shuffle.** Add a batch of pictures, or a whole folder, and they become an album; a folder's album can stay in step with the folder as you add to it. On a screen, an album's pictures take turns with its other scenes: every 15 minutes up to once a day, or each time Anki starts. A screen with a single scene keeps it.
 - **Readable.** Dim and blur are set separately for the deck list and for studying, and dimming follows Anki's light or dark theme. With backdrops on, the deck table and other add-ons' content under it (a heatmap, say) sit on frosted panels, and text that's hard to read on the picture gets a slight colour shift or an outline.
 
+![The deck list with backdrops: a frosted deck table and a fitted panel behind a heatmap add-on](docs/images/main-backdrops.jpg)
+
 ## Using it
 
 Open **Tools → 🖼️ Keshiki**.

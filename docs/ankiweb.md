@@ -63,6 +63,8 @@ Or just set one picture as a plain background: it runs as one image behind the t
 
 ![Reviewing a card over the night version, dimmed and blurred](https://raw.githubusercontent.com/mcgrizzz/Keshiki/main/docs/images/main-review.jpg)
 
+![The deck list with backdrops: a frosted deck table and a fitted panel behind a heatmap add-on](https://raw.githubusercontent.com/mcgrizzz/Keshiki/main/docs/images/main-backdrops.jpg)
+
 ### Setting it up
 
 After installing, restart Anki and open **Tools → 🖼️ Keshiki**. Drag along a day cycle's timeline, or press play to watch the next 24 hours; Anki's main window follows along.

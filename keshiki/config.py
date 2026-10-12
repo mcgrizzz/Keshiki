@@ -20,12 +20,23 @@ DEFAULTS: Dict[str, Any] = {
     # Per image file: {"x": 50, "y": 50}, the point kept in view when cropping.
     "images": {},
     "screens": {
-        "main": {"scenes": [], "every": 60, "dim": 15, "blur": 0},
+        # backdrops (deck list and all done): use the Backdrops page's settings there.
+        "main": {"scenes": [], "every": 60, "dim": 15, "blur": 0, "backdrops": False},
         # same_as_main: studying shows whatever the deck list shows.
         "study": {"enabled": True, "same_as_main": True, "scenes": [], "every": 60, "dim": 45, "blur": 0},
         # Once nothing is left to study today (in any deck), both screens show these
         # scenes, with this dim and blur.
-        "done": {"enabled": False, "scenes": [], "every": 60, "dim": 15, "blur": 0},
+        "done": {"enabled": False, "scenes": [], "every": 60, "dim": 15, "blur": 0, "backdrops": False},
+    },
+    # How the deck list stands off the picture, on screens that use backdrops. table: the
+    # deck table's own panel (opacity in percent, 40 is Anki's; frost, a blur of the picture
+    # behind it, in px). panel: one behind other add-ons' content under the table, in the
+    # table's style (color "" is the window's). text: an outline for text on the picture,
+    # "off", "needed" (only text that's hard to read) or "everywhere", at "strength" percent.
+    "backdrops": {
+        "table": {"opacity": 40, "frost": 2},
+        "panel": {"enabled": True, "opacity": 20, "frost": 2, "padding": 14, "color": ""},
+        "text": {"outline": "needed", "strength": 60},
     },
     # Where sunrise and sunset come from for day-cycle scenes: the times typed
     # here ("manual"), or the sun at latitude/longitude ("location").

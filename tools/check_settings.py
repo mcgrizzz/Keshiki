@@ -364,6 +364,22 @@ def check(app, shots, base):
     assert cfg["screens"]["study"] == dict(cfg["screens"]["study"], same_as_main=False, scenes=[day_id]), cfg["screens"]
     assert len(cfg["screens"]["main"]["scenes"]) == 1 and renderer.preview is None
     shoot(dlg, "screens-saved")
+    # A deck-list screen only switches backdrops on; the Backdrops page sets them up, with a preview.
+    assert run_js(dlg, "$$('[data-card=main] input[type=range]').length") == 2, "backdrop sliders on a screen's card"
+    run_js(dlg, "$('[data-card=main] .backdrop-switch input').click()")
+    assert run_js(dlg, "draft.screens.main.backdrops === true")
+    run_js(dlg, "$('[data-card=main] .backdrop-switch .link').click()")
+    until(app, lambda: run_js(dlg, "page") == "backdrops", 5, "Set them up didn't open the Backdrops page")
+    until(app, lambda: run_js(dlg, "$$('.backdrop-mock .keshiki-layer').length") > 0, 10, "the backdrop preview has no picture")
+    assert run_js(dlg, "$('.backdrop-preview .help').textContent") == "In use on the deck list."
+    # The preview runs the same text help as Anki's window.
+    run_js(dlg, "setv($('select.text-outline'), 'everywhere')")
+    until(app, lambda: run_js(dlg, "$$('.backdrop-mock .mock-table [style*=\"text-shadow\"], .backdrop-mock .mock-table[style*=\"text-shadow\"]').length"
+                                   " + $$('.backdrop-mock .mock-addon [style*=\"text-shadow\"]').length") > 0, 10,
+          "the preview's text isn't outlined")
+    shoot(dlg, "backdrops")
+    run_js(dlg, "$('#cancel').click(); byText('#nav button', 'Screens').click()")
+    until(app, lambda: run_js(dlg, "draft.screens.main.backdrops === false"), 5)
     # Each preview sits beside its controls, and All done for today starts within the window.
     assert run_js(dlg, "$('[data-card=done] h2').getBoundingClientRect().bottom <= $('main').getBoundingClientRect().bottom"), \
         "All done for today is below the fold"
@@ -593,6 +609,14 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "$$('.light-preview .keshiki-layer').length") > 0, 5, "no light preview")
     run_js(dlg, "setv($('.daylight-wrap input'), 1140)")
     until(app, lambda: run_js(dlg, "$('.light-preview .readout').textContent") == "19:00", 5, "the strip didn't move the preview")
+    # The picked time shows in Anki's window too, until Back to now.
+    until(app, lambda: renderer.scene_look is not None, 5, "Anki's window didn't show the picked time")
+    assert run_js(dlg, "!$('#lightNow').hidden")
+    run_js(dlg, "$('#lightNow').click()")
+    until(app, lambda: renderer.scene_look is None, 5, "Back to now didn't hand Anki's window back")
+    assert run_js(dlg, "$('#lightNow').hidden && $('.light-preview .readout').textContent.startsWith('Now')")
+    run_js(dlg, "setv($('.daylight-wrap input'), 1140)")
+    until(app, lambda: renderer.scene_look is not None, 5)
     run_js(dlg, "$('main').scrollTop = $('main').scrollHeight")
     shoot(dlg, "day-light")
     # By default only day cycles are lit, and the preview shows one; every scene can be.
@@ -602,6 +626,10 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "$$('.light-preview .keshiki-layer').length") > 0, 5, "no light preview for every scene")
     run_js(dlg, "byText('label', 'Day cycles only').querySelector('input').click()")
     run_js(dlg, "byText('label', 'Light the pictures by the sun').querySelector('input').click(); $('main').scrollTop = 0")
+    # Leaving the page hands Anki's window back.
+    run_js(dlg, "byText('#nav button', 'Screens').click()")
+    until(app, lambda: renderer.scene_look is None, 5, "leaving Day & time kept the picked time in Anki's window")
+    run_js(dlg, "byText('#nav button', 'Day & time').click()")
     print("PASS: the Day & time page looks up a rough location once, works out today's sun, and previews the light.")
 
     # Per-page Revert and Restore: only that page changes, and only in the draft.

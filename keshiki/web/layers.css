@@ -4,21 +4,43 @@
 .keshiki-stage {
   position: absolute; inset: 0; overflow: hidden; pointer-events: none;
   background: var(--canvas, #2c2c2c);
-  transition: opacity var(--kk-fade, 0ms) ease-in-out;
+  transition: opacity var(--kk-fade, 0ms) ease-in-out var(--kk-delay, 0ms);
 }
 .keshiki-stage.keshiki-fixed { position: fixed; z-index: -2147483647; }
-.keshiki-stack { position: absolute; inset: 0; transition: filter var(--kk-fade, 0ms) ease-in-out; }
-.keshiki-layer { position: absolute; inset: 0; isolation: isolate; transition: opacity var(--kk-fade, 0ms) ease-in-out; }
+.keshiki-stack { position: absolute; inset: 0; transition: filter var(--kk-fade, 0ms) ease-in-out var(--kk-delay, 0ms); }
+.keshiki-layer { position: absolute; inset: 0; isolation: isolate; transition: opacity var(--kk-fade, 0ms) ease-in-out var(--kk-delay, 0ms); }
+/* Each picture (with its colour filter) is drawn once into a layer of its own, and its fade
+   runs on the compositor: no redrawing the filtered picture every frame, and smooth however
+   long the crossfade or busy the page. The dim fades the same way. */
+.keshiki-layer, .keshiki-dim { will-change: opacity; }
 .keshiki-layer > div {
   position: absolute; inset: 0;
   background-size: cover; background-repeat: no-repeat; background-position: var(--kx, 50%) var(--ky, 50%);
 }
-.keshiki-lights, .keshiki-bloom { transition: opacity var(--kk-fade, 0ms) ease-in-out; }
+.keshiki-lights, .keshiki-bloom { transition: opacity var(--kk-fade, 0ms) ease-in-out var(--kk-delay, 0ms); }
 .keshiki-bloom { mix-blend-mode: screen; }
+/* A faint static grain (layers.js, grain): dithers slow fades between close colours. */
+.keshiki-grain { position: absolute; inset: 0; pointer-events: none; }
 /* Dims toward the theme's own background, so text keeps its contrast in light and dark mode. */
 .keshiki-dim {
   position: absolute; inset: 0; background: var(--canvas, #2c2c2c);
-  transition: opacity var(--kk-fade, 0ms) ease-in-out;
+  transition: opacity var(--kk-fade, 0ms) ease-in-out var(--kk-delay, 0ms);
+}
+
+/* The deck list's backdrops (layers.js, backdrop): the deck table's panel at their opacity
+   and frost; a panel behind other add-ons' content in its look (deckbrowser.css, .fancy
+   table: canvas-glass is the elevated canvas at 40%), above the picture and behind the
+   page's content. (Text is helped by layers.js, Contrast.) */
+html.keshiki-on.keshiki-decks .fancy table {
+  background: color-mix(in srgb, var(--canvas-elevated, #363636) var(--kk-table, 40%), transparent);
+  backdrop-filter: blur(var(--kk-table-frost, 0px));
+}
+.keshiki-panel {
+  position: absolute; z-index: -1; pointer-events: none; box-sizing: border-box;
+  background: color-mix(in srgb, var(--kk-panel-color, #363636) var(--kk-panel, 40%), transparent);
+  border: 1px solid var(--border-subtle, #252525); border-radius: var(--border-radius-medium, 12px);
+  box-shadow: 0 2px 1px -1px rgba(20, 20, 20, .12), 0 1px 1px 0 rgba(20, 20, 20, .06), 0 1px 3px 0 rgba(20, 20, 20, .04);
+  backdrop-filter: blur(var(--kk-panel-frost, 0px));
 }
 
 /* While a background shows, pages let it through: Anki's canvas, card

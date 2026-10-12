@@ -59,7 +59,7 @@ Or just set one picture as a plain background: it runs as one image behind the t
 * **Light by the sun.** Optionally colour your day cycles (or every picture) by the sun's height: warm low sun, plain midday, blue twilight and a dim night. At night a picture's own lights (lit windows, lamps, stars) stay lit and glow softly.
 * **All done for today.** Different scenes once nothing is left to study in any deck.
 * **Albums and shuffle.** Add a batch of pictures, or a whole folder (it can stay in step as you add to it), and they become an album; on a screen its pictures take turns, every 15 minutes up to once a day.
-* **Readable.** Dim and blur set separately for the deck list and for studying.
+* **Readable.** Dim and blur set separately for the deck list and for studying. Backdrops put the deck table and other add-ons' content on frosted panels, and help text that's hard to read on the picture.
 
 ![Reviewing a card over the night version, dimmed and blurred](https://raw.githubusercontent.com/mcgrizzz/Keshiki/main/docs/images/main-review.jpg)
 

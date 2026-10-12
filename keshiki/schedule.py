@@ -11,6 +11,7 @@ two layers: the previous version underneath, the new one on top.
 
 from __future__ import annotations
 
+import copy
 import random
 from functools import lru_cache
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -69,7 +70,15 @@ def build_look(cfg: dict, screen: str, *, minute_of_day: float, now_minutes: int
         "dim": round(_num(look.get("dim")) / 100, 3),
         "blur": _num(look.get("blur")),
         "fade": int(_num(cfg.get("transition_seconds")) * 1000),
+        **backdrop_look(cfg, look),
     }
+
+
+def backdrop_look(cfg: dict, screen: dict) -> dict:
+    """The deck list's backdrops for a look (layers.js, backdrops), when the screen uses them:
+    {"backdrops": {table, panel, outline}}, a copy of the settings (a look is compared with
+    the last one shown, so it mustn't change with the config), or nothing."""
+    return {"backdrops": copy.deepcopy(cfg.get("backdrops") or {})} if screen.get("backdrops") else {}
 
 
 # -- light ------------------------------------------------------------------

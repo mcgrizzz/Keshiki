@@ -15,7 +15,7 @@ from typing import Callable, Optional
 from . import folders, library
 from ._kiso import settings as kiso_settings
 from .config import ADDON_PACKAGE, DEFAULTS, SUN_MOMENTS, images_in_use, migrate, new_scene, validate
-from .schedule import build_look, day_anchors, light, screen_source, version_starts
+from .schedule import backdrop_look, build_look, day_anchors, light, screen_source, version_starts
 from .schedule import compose as compose_layers
 from .sun import location_sun
 
@@ -207,7 +207,7 @@ class SettingsBridge(kiso_settings.Bridge):
                 cfg = migrate(arg.get("cfg") or {})[0]
                 _, look = screen_source(cfg, self.renderer.screen())
                 moment = {"layers": out, "dim": round(float(look.get("dim") or 0) / 100, 3),
-                          "blur": float(look.get("blur") or 0), "fade": int(arg.get("fade") or 0)}
+                          "blur": float(look.get("blur") or 0), "fade": int(arg.get("fade") or 0), **backdrop_look(cfg, look)}
             if moment or self.renderer.scene_look is not None:
                 self.renderer.show_scene_moment(moment)
         return {
@@ -229,6 +229,22 @@ class SettingsBridge(kiso_settings.Bridge):
                           launch_seed=getattr(self.renderer, "launch_seed", 0), sun=_sun(cfg["day"]),
                           percent_done=self._percent, image_url=library.image_url,
                           image_stats=library.image_stats, image_lights=library.lights_url)
+
+    def op_moment_at(self, arg) -> None:
+        """Anki's window as its screen would look at a minute of today, with the draft config
+        (the Today strip on the Day & time page), until end_moment."""
+        if not self.renderer:
+            return
+        cfg = migrate(arg["cfg"])[0]
+        now, offset = _now()
+        look = build_look(cfg, self.renderer.screen(), all_done=self._all_done, minute_of_day=float(arg["minute"]),
+                          now_minutes=int(now.timestamp() / 60 + offset),
+                          launch_seed=getattr(self.renderer, "launch_seed", 0), sun=_sun(cfg["day"]),
+                          percent_done=self._percent, image_url=library.image_url,
+                          image_stats=library.image_stats, image_lights=library.lights_url)
+        if look:
+            look["fade"] = 120   # dragging: each step eases into the next
+        self.renderer.show_scene_moment(look)
 
     def op_locate(self, _arg) -> dict:
         """Start a location lookup; the page hears back through keshikiLocated()."""

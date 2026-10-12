@@ -6,7 +6,8 @@
             "scenes": [],
             "every": 60,
             "dim": 15,
-            "blur": 0
+            "blur": 0,
+            "backdrops": false
         },
         "study": {
             "enabled": true,
@@ -21,7 +22,25 @@
             "scenes": [],
             "every": 60,
             "dim": 15,
-            "blur": 0
+            "blur": 0,
+            "backdrops": false
+        }
+    },
+    "backdrops": {
+        "table": {
+            "opacity": 40,
+            "frost": 2
+        },
+        "panel": {
+            "enabled": true,
+            "opacity": 20,
+            "frost": 2,
+            "padding": 14,
+            "color": ""
+        },
+        "text": {
+            "outline": "needed",
+            "strength": 60
         }
     },
     "day": {

@@ -9,7 +9,7 @@ Background scenes for Anki's main window that follow the sun through the day, an
 - **Light by the sun.** Optionally colour your day cycles (or every picture) by the sun's height: warm low sun, plain midday, blue twilight and a dim, faded night, based on published daylight measurements and night-vision research. At night, a picture's own lights (lit windows, lamps, stars) stay lit and glow softly.
 - **All done for today.** Show different scenes once nothing is left to study in any deck.
 - **Albums and shuffle.** Add a batch of pictures, or a whole folder, and they become an album; a folder's album can stay in step with the folder as you add to it. On a screen, an album's pictures take turns with its other scenes: every 15 minutes up to once a day, or each time Anki starts. A screen with a single scene keeps it.
-- **Readable.** Dim and blur are set separately for the deck list and for studying, and dimming follows Anki's light or dark theme.
+- **Readable.** Dim and blur are set separately for the deck list and for studying, and dimming follows Anki's light or dark theme. With backdrops on, the deck table and other add-ons' content under it (a heatmap, say) sit on frosted panels, and text that's hard to read on the picture gets a slight colour shift or an outline.
 
 ## Using it
 
@@ -17,7 +17,7 @@ Open **Tools → 🖼️ Keshiki**.
 
 1. On **Screens**, choose **Add images...**. Several pictures become an album on the deck list, taking turns. Later, add pictures on **Scenes**; **Combine pictures...** there folds single-picture scenes into an album.
 2. On **Scenes**, under **New scene**, choose **Day cycle**, then pick a picture for each version. Drag along the strip under the preview to see any time of day, or press ▶ to watch the next 24 hours as a timelapse. Anki's main window follows along until you press **Back to now**.
-3. Back on **Screens**, give **Studying** its own scenes if you like, and set dim and blur.
+3. Back on **Screens**, give **Studying** its own scenes if you like, and set dim and blur. Turn on **Use backdrops** for the deck list and adjust them on **Backdrops**.
 
 Your edits show in the main window as you make them. **Save** keeps them and **Cancel** puts things back.
 

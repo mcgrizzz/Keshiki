@@ -5,6 +5,7 @@
 .daylight-wrap .hand { position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1.5px; border-radius: 2px;
                        background: var(--kiso-fg); box-shadow: 0 0 0 1px var(--kiso-card); pointer-events: none; }
 .daylight-wrap input[type=range] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+#main #lightNow { margin-top: 2px; padding-left: 0; }
 .daylight-wrap:focus-within { outline: 2px solid var(--kiso-link); outline-offset: 2px; border-radius: 5px; }
 /* Light: a small picture in that light beside its controls. */
 .indent-help { margin-left: 26px; }
@@ -55,6 +56,30 @@
 .screen-controls select.shuffle { justify-self: start; width: auto; }
 @container (max-width: 600px) { .screen-body { grid-template-columns: 176px minmax(0, 1fr); gap: 4px 14px; } }
 @container (max-width: 440px) { .screen-body { grid-template-columns: minmax(0, 1fr); } .screen-body .mock { max-width: 300px; } }
+.backdrop-switch .check { margin: 0; display: inline-flex; }
+.backdrop-switch .link { margin-left: 10px; }
+/* The Backdrops page: a bigger miniature, with a stand-in for other add-ons under the table. */
+.backdrop-preview .mock { max-width: 640px; margin: 0 auto; }
+.backdrop-preview .help { text-align: center; margin: 8px auto 0; }
+.backdrop-preview .help.warn { color: var(--kiso-fg); }
+.backdrop-mock .mock-bar, .backdrop-mock .mock-table, .backdrop-mock .mock-addon { font-size: min(12px, 2.1cqw); }
+.backdrop-mock .mock-table { background: color-mix(in srgb, var(--canvas-elevated, #363636) var(--kk-table, 40%), transparent);
+                             backdrop-filter: blur(calc(var(--kk-table-frost, 0px) * 0.5)); }
+.mock-addon { width: fit-content; margin: 4% auto 0; text-align: center; border: 1px solid transparent; }
+.mock-stats { display: flex; justify-content: center; gap: 2.4em; margin: .8em 0; }
+.mock-stats span { display: flex; flex-direction: column; }
+.mock-stats b { color: var(--state-new, #93c5fd); }
+.mock-heat { display: grid; grid-template-columns: repeat(26, .9em); gap: .2em; justify-content: center; }
+.mock-heat i { aspect-ratio: 1; background: #5b8fd8; border-radius: 1px; }
+.backdrop-mock.paneled .mock-addon {
+  padding: calc(var(--kk-pad, 14px) * 0.5); border-color: var(--border-subtle, #252525); border-radius: 8px;
+  background: color-mix(in srgb, var(--kk-panel-color, #363636) var(--kk-panel, 40%), transparent);
+  backdrop-filter: blur(calc(var(--kk-panel-frost, 0px) * 0.5));
+}
+.color-choice { display: flex; align-items: center; gap: 8px; }
+.color-choice input[type=color] { width: 40px; height: 26px; padding: 0 2px; border: 1px solid var(--kiso-border); border-radius: 6px; background: none; }
+.color-choice input[type=color]:disabled { opacity: .4; }
+
 /* Under its checkbox: indented, and dimmed while the checkbox is off. */
 fieldset.dependent { min-width: 0; margin: 6px 0 0 7px; padding: 0 0 0 18px; border: 0; border-left: 2px solid var(--kiso-soft); }
 fieldset.dependent > .choices:first-child { margin-top: 0; }

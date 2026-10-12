@@ -312,3 +312,18 @@ def test_daylight_can_light_only_day_cycles():
     look = build_look(built, "main", minute_of_day=19 * 60, now_minutes=0, launch_seed=0, sun=None,
                       percent_done=lambda: 0, image_url=lambda n: n, image_stats=stats.get)
     assert "light" not in look["layers"][0]
+
+
+def test_backdrops_come_with_a_screen_that_uses_them_as_a_copy():
+    cfg, _ = migrate({})
+    cfg["scenes"] = [{"id": "s", "name": "S", "kind": "single", "versions": [{"label": "", "image": "a"}]}]
+    cfg["screens"]["main"]["scenes"] = ["s"]
+    def look():
+        return build_look(cfg, "main", minute_of_day=600, now_minutes=0, launch_seed=0, sun=None,
+                          percent_done=lambda: 0, image_url=lambda n: n)
+    assert "backdrops" not in look()
+    cfg["screens"]["main"]["backdrops"] = True
+    before = look()
+    assert before["backdrops"] == cfg["backdrops"] and before["backdrops"]["table"]["opacity"] == 40
+    cfg["backdrops"]["table"]["opacity"] = 70   # changed in place: the look shown before doesn't follow
+    assert before["backdrops"]["table"]["opacity"] == 40 and look() != before

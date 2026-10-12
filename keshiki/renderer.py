@@ -51,6 +51,9 @@ class Renderer(QObject):
         self.scene_look: Optional[dict] = None   # a moment the scene editor is scrubbed to
         self.launch_seed = random.randrange(1 << 30)
         self.shown: Optional[dict] = None     # the look on screen now
+        # A crossfade under way: (the look before, the look it's fading to, when it began
+        # (monotonic), seconds, when it began (epoch ms, for the page)).
+        self._fading: Optional[Tuple[dict, dict, float, float, int]] = None
         self._progress: Optional[float] = None
         self._all_done: Optional[bool] = None
         self.enabled = True   # False once turned off in Tools > Add-ons, until Anki restarts
@@ -195,7 +198,10 @@ class Renderer(QObject):
         look = self.look()
         if look == self.shown:
             return
-        self.shown = look
+        before, self.shown = self.shown, look
+        seconds = (look or {}).get("fade", 0) / 1000
+        self._fading = ((before, look, time.monotonic(), seconds, int(time.time() * 1000))
+                        if before and look and seconds else None)
         js = f"window.keshiki && keshiki.main && keshiki.main.apply({json.dumps(look)})"
         for web in self._webviews():
             web.eval(js)
@@ -221,7 +227,16 @@ class Renderer(QObject):
     def bootstrap_js(self, web: AnkiWebView) -> str:
         if self.shown is None and self.mw.col is not None:
             self.shown = self.look()
-        return f"{self._web_assets[1]}\nkeshiki.mount({json.dumps(self.geometry(web))}, {json.dumps(self.shown)});"
+        # A page that loads during a crossfade (Anki builds the deck list and the overview
+        # after the screen has changed) starts on the look before and catches up with the
+        # bars, which have been fading all along: from when it actually runs (layers.js, join).
+        start, then = self.shown, ""
+        if self._fading and self._fading[1] is self.shown:
+            before, look, began, seconds, began_ms = self._fading
+            if seconds - (time.monotonic() - began) > 0.05:
+                start = before
+                then = f"keshiki.main.join({json.dumps(look)}, {began_ms});"
+        return f"{self._web_assets[1]}\nkeshiki.mount({json.dumps(self.geometry(web))}, {json.dumps(start)});{then}"
 
     def _web_for_context(self, context: Any) -> Optional[AnkiWebView]:
         from aqt.deckbrowser import DeckBrowser, DeckBrowserBottomBar

@@ -85,6 +85,97 @@ def check(app, shots, base):
         assert mismatch < reference + 25, f"{name} seam breaks the image"
     print("PASS: the image runs on across both seams.")
 
+    # Other add-ons' content under the deck table (a stand-in for Review Heatmap and Study Time
+    # Stats) gets a backdrop in the table's style: fitted to it, clear of the table, following it.
+    from aqt import gui_hooks
+    cells = "".join('<div style="width:12px;height:12px;background:#5b8fd8"></div>' for _ in range(60))
+    def extra(_browser, content):
+        content.stats += ('<div id="fakeAddon"><div style="display:flex;justify-content:center;gap:40px;margin:16px 0">'
+                          '<span>Past week<br><b style="color:#4a90e2">9.39 hrs</b></span><span>Total<br><b style="color:#4a90e2">807 hrs</b></span></div>'
+                          '<div id="fakeHeat" style="display:grid;grid-template-columns:repeat(30,12px);gap:2px;'
+                          f'justify-content:center">{cells}</div></div>')
+    gui_hooks.deck_browser_will_render_content.append(extra)
+    mw.deckBrowser.refresh()
+    until(app, lambda: js(app, mw.web, "!!document.getElementById('fakeHeat')"), 10, "the stand-in add-on didn't render")
+    panel = """(() => { const p = document.querySelector('.keshiki-panel');
+        if (!p || p.style.display === 'none') return null;
+        const r = (el) => el.getBoundingClientRect().toJSON();
+        const cells = [...document.getElementById('fakeHeat').children].map(r);   // the grid box itself is full width
+        const heat = { left: Math.min(...cells.map(c => c.left)), right: Math.max(...cells.map(c => c.right)),
+                       bottom: Math.max(...cells.map(c => c.bottom)) };
+        return { panel: r(p), heat, table: r(document.querySelector('center > table')),
+                 stats: r(document.getElementById('studiedToday')), width: innerWidth }; })()"""
+    assert js(app, mw.web, panel) is None, "a backdrop shows while it's off"
+    cfg["backdrops"]["table"]["frost"] = 10
+    cfg["backdrops"]["panel"]["frost"] = 10
+    renderer.set_config(cfg)
+    pump(app, 0.5)
+    assert js(app, mw.web, panel) is None, "a backdrop shows on a screen that doesn't use them"
+    cfg["screens"]["main"]["backdrops"] = True
+    renderer.set_config(cfg)
+    until(app, lambda: js(app, mw.web, panel) is not None, 10, "no backdrop behind the add-on's content")
+    got = js(app, mw.web, panel)
+    p, heat, table = got["panel"], got["heat"], got["table"]
+    assert p["left"] < heat["left"] and p["right"] > heat["right"] and p["bottom"] > heat["bottom"], got
+    assert p["top"] < got["stats"]["top"] + 8 and p["top"] >= table["bottom"], got   # from the stats line, below the table
+    assert p["width"] < got["width"] * 0.9, f"the backdrop isn't fitted: {got}"
+    # It and the deck table blur the picture behind them; outlined text has a halo.
+    frosted = ("[getComputedStyle(document.querySelector('.keshiki-panel')).backdropFilter, "
+               "getComputedStyle(document.querySelector('center > table')).backdropFilter]")
+    assert js(app, mw.web, frosted) == ["blur(10px)", "blur(10px)"], js(app, mw.web, frosted)
+    # Each panel has its own opacity (the defaults differ: the add-ons' is lighter).
+    fills = ("[getComputedStyle(document.querySelector('.keshiki-panel')).backgroundColor, "
+             "getComputedStyle(document.querySelector('center > table')).backgroundColor]")
+    at40 = js(app, mw.web, fills)
+    assert at40[0] != at40[1], at40
+    cfg["backdrops"]["table"]["opacity"] = 75
+    renderer.set_config(cfg)
+    until(app, lambda: js(app, mw.web, fills)[1] != at40[1], 5, "opacity didn't reach the deck table")
+    assert js(app, mw.web, fills)[0] == at40[0], "the add-ons' panel has its own opacity"
+    cfg["backdrops"]["table"]["opacity"] = 40
+    renderer.set_config(cfg)
+    # Text on the picture. Where needed: only text short of 4.5:1 is helped, and enough.
+    report = "keshiki.contrast.report"
+    shadow = "(s) => getComputedStyle(document.querySelector(s)).textShadow"
+    cfg["backdrops"]["text"] = {"outline": "needed", "strength": 60}
+    renderer.set_config(cfg)
+    until(app, lambda: len(js(app, mw.web, report)) > 5, 10, "the text wasn't measured")
+    got = js(app, mw.web, report)
+    helped = [r for r in got if r["color"] or r["halo"]]
+    assert helped, got
+    assert all(r["after"] >= 4.5 or r["halo"] for r in got), [r for r in got if r["after"] < 4.5 and not r["halo"]]
+    assert all(r["before"] < 4.5 for r in helped), "text that read well was changed"
+    assert any(r["color"] and r["text"] in ("9.39 hrs", "807 hrs") for r in got), got   # the blue numbers shift
+    zero_untouched = "[...document.querySelectorAll('.zero-count')].every(e => !e.style.color && !e.style.textShadow)"
+    assert js(app, mw.web, zero_untouched), "Anki's faint zero counts were changed"
+    # The outline is the text's opposite: this light theme's dark text gets a light one.
+    haloed = "[...keshiki.contrast.touched.keys()].map(e => e.style.textShadow).filter(Boolean)"
+    dark_text = [h for h in js(app, mw.web, haloed)]
+    assert dark_text and all("255, 255, 255" in h for h in dark_text), dark_text
+    # Everywhere: all text has the outline (the deck table's too), more where needed.
+    cfg["backdrops"]["text"]["outline"] = "everywhere"
+    renderer.set_config(cfg)
+    until(app, lambda: js(app, mw.web, f"({shadow})('center > table th')") != "none", 5, "the deck table isn't outlined")
+    assert js(app, mw.web, "[...document.querySelectorAll('#studiedToday, #studiedToday *')]"
+                           ".some(e => getComputedStyle(e).textShadow !== 'none')"), "the stats line isn't outlined"
+    assert js(app, mw.web, zero_untouched)
+    pump(app, 0.5)
+    if shots:
+        central.grab().save(str(shots / "deck-list-backdrop.png"))
+    cfg["backdrops"]["text"]["outline"] = "off"
+    renderer.set_config(cfg)
+    until(app, lambda: js(app, mw.web, "keshiki.contrast.touched.size") == 0, 5, "the outline stayed after turning it off")
+    # The content grows (another row of the heatmap): the backdrop follows.
+    js(app, mw.web, f"document.getElementById('fakeHeat').insertAdjacentHTML('beforeend', {json.dumps(cells)})")
+    until(app, lambda: js(app, mw.web, panel)["panel"]["bottom"] > p["bottom"] + 20, 5, "the backdrop didn't follow its content")
+    cfg["screens"]["main"]["backdrops"] = False
+    renderer.set_config(cfg)
+    until(app, lambda: js(app, mw.web, panel) is None, 5, "the backdrop stayed after turning it off")
+    gui_hooks.deck_browser_will_render_content.remove(extra)
+    mw.deckBrowser.refresh()
+    print("PASS: on a screen that uses backdrops, other add-ons' content under the deck table gets a fitted, "
+          "frosted panel that follows it, and text on the picture is outlined where needed or everywhere.")
+
     # Studying: same scene, its own dim, crossfaded rather than reloaded on the bars.
     did = mw.col.decks.id("Default")
     note = mw.col.new_note(mw.col.models.by_name("Basic"))
@@ -100,6 +191,19 @@ def check(app, shots, base):
     if shots:
         central.grab().save(str(shots / "reviewer.png"))
     print("PASS: the reviewer and both bars switch to the study look.")
+
+    # Back to the deck list: Anki builds that page after the screen has changed, so it loads
+    # mid-crossfade. It fades with the bars from where they are, instead of jumping to the end.
+    dim = "Number(getComputedStyle(keshiki.main.dim).opacity)"
+    mw.moveToState("deckBrowser")
+    pump(app, 0.9)
+    main_dim, bar_dim = js(app, mw.web, dim), js(app, mw.toolbarWeb, dim)
+    assert 0.03 < main_dim < 0.29 and abs(main_dim - bar_dim) < 0.1, (main_dim, bar_dim)
+    until(app, lambda: js(app, mw.web, dim) == 0 and js(app, mw.toolbarWeb, dim) == 0, 5)
+    mw.moveToState("review")
+    until(app, lambda: mw.state == "review", 5)
+    pump(app, 2.5)
+    print("PASS: a page that loads mid-crossfade fades in step with the bars.")
 
     # Anki's "hide bottom bar" collapses it mid-review; its stage follows its new offset.
     mw.pm.set_hide_bottom_bar(True)

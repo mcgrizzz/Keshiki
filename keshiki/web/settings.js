@@ -29,6 +29,7 @@ Object.assign(ICONS, {
   hide: "M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.2A9.6 9.6 0 0 1 12 5c5 0 8.7 4.2 10 7a14 14 0 0 1-2.6 3.6M6.6 6.6C4.4 8 2.9 10.2 2 12c1.3 2.8 5 7 10 7a9.7 9.7 0 0 0 5.4-1.6",
   trash: "M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3",
   play: "M8 5v14l11-7z",
+  backdrops: "M4 5h16v6H4zM6 14h12v5H6zM8 8h5M9 16.5h4",
   pause: "M8 5v14M16 5v14",
 });
 
@@ -73,12 +74,14 @@ function refreshPreviews() {
   for (const box of document.querySelectorAll("[data-screen]")) {
     call("look", { cfg: draft, screen: box.dataset.screen }).then((look) => {
       stageFor(box).apply(look && !look.error ? Object.assign(look, { fade: 400 }) : null);
+      if (box.contrast) box.contrast.soon(50);   // measured on the picture now showing
       box.querySelector(".mock-empty").hidden = !!(look && look.layers);
     });
   }
   const preview = document.querySelector(".preview");
   if (preview) updateScenePreview(preview, true);
   updateLightPreview();
+  styleBackdropMock();
 }
 
 function mock(screen) {
@@ -108,7 +111,7 @@ function screensPage() {
   return [
     ...pageHead("Screens", "Choose what shows behind the deck list and while you study. Edits preview in Anki's main window until you save."),
     screenCard("main", "Deck list", "Your decks, and while Anki starts",
-      sceneChooser(main), lookControls(main)),
+      sceneChooser(main), lookControls(main), backdropSwitch(main)),
     screenCard("study", "Studying", "Overview, reviews and the finished screen",
       check(study.enabled, "Show a background while studying", (on) => { study.enabled = on; }),
       dependent(study.enabled,
@@ -123,8 +126,19 @@ function screensPage() {
       dependent(done.enabled,
         sceneChooser(done),
         lookControls(done),
+        backdropSwitch(done),
         h("p", { className: "help" }, "For the deck list and studying alike. A new day, with new cards due, switches back."))),
   ];
+}
+
+// A deck-list screen uses the Backdrops page's settings, or Anki's own look.
+function backdropSwitch(screen) {
+  return h("div", { className: "field backdrop-switch" }, h("span", { className: "label" }, "Backdrops"),
+    h("div", {},
+      h("label", { className: "check" },
+        h("input", { type: "checkbox", checked: !!screen.backdrops,
+                     onchange: (e) => { screen.backdrops = e.target.checked; changed(); } }), "Use backdrops"),
+      h("button", { type: "button", className: "link", onclick: () => { page = "backdrops"; render(); } }, "Set them up...")));
 }
 
 // A screen: its preview on the left, what it shows on the right.
@@ -1024,6 +1038,97 @@ function pickImage(current, use, scene = null, index = -1, { positionOnly = fals
   drawGrid(); drawSide();
 }
 
+// -- Backdrops page ---------------------------------------------------------
+
+// How the deck list stands off the picture, on the screens that use backdrops: the deck
+// table's panel, a panel behind other add-ons' content, and an outline on that content's text.
+// The preview is the deck list's scene with a stand-in for those add-ons.
+function backdropsPage() {
+  const b = draft.backdrops;
+  const using = ["main", "done"].filter((k) => draft.screens[k].backdrops).map((k) => (k === "main" ? "the deck list" : "All done"));
+  const preview = mock("main");
+  preview.classList.add("backdrop-mock");
+  preview.append(h("div", { className: "mock-addon" },
+    h("div", {}, "Studied 255 cards in 72 minutes today"),
+    h("div", { className: "mock-stats" }, [["Past week", "9.4 hrs"], ["Total", "807 hrs"], ["Streak", "869 days"]]
+      .map(([k, v]) => h("span", {}, k, h("b", {}, v)))),
+    h("div", { className: "mock-heat" }, Array.from({ length: 52 }, (_, i) => h("i", { style: { opacity: String(0.35 + ((i * 37) % 13) / 20) } })))));
+  return [
+    ...pageHead("Backdrops", "Keep the deck list readable over any picture. Each screen turns them on with its Backdrops switch."),
+    h("section", { className: "panel backdrop-preview" },
+      preview,
+      h("p", { className: using.length ? "help" : "help warn" }, using.length
+        ? `In use on ${using.join(" and ")}.`
+        : "No screen uses backdrops yet: turn on \"Use backdrops\" on the Screens page.")),
+    h("section", { className: "panel" },
+      h("div", { className: "panel-head" }, h("h2", {}, "Deck table"), h("span", { className: "help" }, "Anki's own panel around your decks")),
+      slider("Opacity", b.table.opacity, 0, 90, "%", (v) => { b.table.opacity = v; }),
+      slider("Frost", b.table.frost, 0, 20, "px", (v) => { b.table.frost = v; }),
+      h("div", { className: "field" }, h("span"),
+        help("40% is Anki's own. Frost blurs the picture behind the panel, so busy detail doesn't run through the text."))),
+    h("section", { className: "panel" },
+      h("div", { className: "panel-head" }, h("h2", {}, "Other add-ons' content"),
+        h("span", { className: "help" }, "Review Heatmap, Study Time Stats, the \"Studied N cards\" line")),
+      check(b.panel.enabled, "A panel behind it, in the deck table's style", (on) => { b.panel.enabled = on; }),
+      dependent(b.panel.enabled,
+        slider("Opacity", b.panel.opacity, 0, 90, "%", (v) => { b.panel.opacity = v; }),
+        slider("Frost", b.panel.frost, 0, 20, "px", (v) => { b.panel.frost = v; }),
+        slider("Padding", b.panel.padding, 0, 40, "px", (v) => { b.panel.padding = v; }),
+        colorField("Colour", b.panel, "color", "--canvas-elevated"),
+        h("div", { className: "field" }, h("span"),
+          help("It fits around what they show under the deck table and follows it as the page changes.")))),
+    h("section", { className: "panel" },
+      h("div", { className: "panel-head" }, h("h2", {}, "Text on the picture"),
+        h("span", { className: "help" }, "Everything on the deck list, the deck table included")),
+      h("div", { className: "field" }, h("label", {}, "Outline"),
+        h("select", { className: "text-outline", onchange: (e) => { b.text.outline = e.target.value; changed(true); } },
+          [["off", "Off"], ["needed", "Where needed"], ["everywhere", "Everywhere"]].map(([v, label]) =>
+            h("option", { value: v, selected: b.text.outline === v }, label)))),
+      dependent(b.text.outline !== "off",
+        slider("Strength", b.text.strength, 0, 100, "%", (v) => { b.text.strength = v; })),
+      h("div", { className: "field" }, h("span"),
+        help("Where needed helps only text the picture makes hard to read; everywhere outlines all of it, and more "
+          + "where needed. The outline is always the text's opposite: dark behind light text.",
+          "Keshiki works out the colour behind each piece of text from the picture it draws, with the panel it's on, "
+          + "and compares the two as WCAG contrast ratios do (4.5:1 reads well). Text short of that is helped as much "
+          + "as it's short: coloured text first moves a little lighter (darker in a light theme) and its hue a touch "
+          + "away from the picture's, then an outline makes up the rest. Anki's faint zero counts stay faint. It's "
+          + "measured again when the scene, the page or the window changes."))),
+  ];
+}
+
+// A colour: the window's (theme), or one picked.
+function colorField(label, obj, key, themeVar) {
+  const theme = getComputedStyle(document.documentElement).getPropertyValue(themeVar).trim();
+  const custom = !!obj[key];
+  const picker = h("input", { type: "color", value: obj[key] || (/^#[0-9a-f]{6}$/i.test(theme) ? theme : "#2c2c2c"),
+                              disabled: !custom, "aria-label": `${label}, custom`,
+                              oninput: (e) => { obj[key] = e.target.value; changed(); } });
+  return h("div", { className: "field" }, h("span", { className: "label" }, label),
+    h("div", { className: "color-choice" },
+      h("select", { "aria-label": label, onchange: (e) => { obj[key] = e.target.value === "custom" ? picker.value : ""; changed(true); } },
+        h("option", { value: "", selected: !custom }, "Window colour"),
+        h("option", { value: "custom", selected: custom }, "Custom")),
+      picker));
+}
+
+// The preview takes the settings as they are now (as the main window does).
+function styleBackdropMock() {
+  const box = document.querySelector(".backdrop-mock");
+  if (!box) return;
+  const { table, panel, text } = draft.backdrops;
+  const vars = {
+    "--kk-table": table.opacity + "%", "--kk-table-frost": table.frost + "px",
+    "--kk-panel": panel.opacity + "%", "--kk-panel-frost": panel.frost + "px", "--kk-pad": panel.padding + "px",
+    "--kk-panel-color": panel.color || "var(--canvas-elevated)",
+  };
+  for (const [k, v] of Object.entries(vars)) box.style.setProperty(k, v);
+  box.classList.toggle("paneled", !!panel.enabled);
+  // The text help, as Anki's window has it (layers.js, Contrast), measured on the preview.
+  if (!box.contrast) box.contrast = new keshiki.Contrast(box, stageFor(box));
+  box.contrast.set(text);
+}
+
 // -- Day & time page -----------------------------------------------------
 
 // The location's details (coordinates, fallback times) open with Change, and on their own
@@ -1111,7 +1216,8 @@ function dayPage() {
 }
 
 // Light: lighting the pictures by the sun, with a strength and a bloom. A small preview shows
-// one of your pictures in that light at a time chosen along today's strip (now, to start).
+// one of your pictures in that light at a time chosen along today's strip (now, to start);
+// a chosen time shows in Anki's window too, until Back to now or leaving the page.
 let lightAt = null;
 
 function lightPanel() {
@@ -1123,7 +1229,10 @@ function lightPanel() {
   const input = h("input", { type: "range", min: 0, max: 1440, step: 5, value: minute(), "aria-label": "Time of day to preview",
                              title: "Click or drag to see the light at another time",
                              oninput: (e) => { lightAt = Number(e.target.value); placeHand(); updateLightPreview(); } });
-  const placeHand = () => { hand.style.left = (100 * minute()) / 1440 + "%"; };
+  const now = h("button", { type: "button", className: "link", id: "lightNow", hidden: lightAt === null,
+                            title: "Stop previewing this time, here and in Anki's window",
+                            onclick: () => { lightAt = null; call("end_moment"); placeHand(); updateLightPreview(); } }, "Back to now");
+  const placeHand = () => { hand.style.left = (100 * minute()) / 1440 + "%"; now.hidden = lightAt === null; };
   placeHand();
   const drawStrip = () => call("daylight", { day: draft.day, strength: l.tint_strength }).then((res) => {
       if (!res || res.error) return;
@@ -1158,7 +1267,7 @@ function lightPanel() {
               radio("lightScope", l.scope === "all", "Every scene", () => { l.scope = "all"; changed(true); }))),
           slider("Strength", l.tint_strength, 0, 100, "%", (v) => { l.tint_strength = v; drawStrip(); }),
           h("div", { className: "field" }, h("span", { className: "label" }, "Today"),
-            h("div", {}, h("div", { className: "daylight-wrap" }, strip, hand, input), ticks)),
+            h("div", {}, h("div", { className: "daylight-wrap" }, strip, hand, input), ticks, now)),
           slider("Bloom", l.bloom, 0, 100, "%", (v) => { l.bloom = v; }),
           h("div", { className: "field" }, h("span"),
             help("A soft glow around a night picture's own lights.",
@@ -1179,6 +1288,8 @@ function lightScene() {
 }
 
 function updateLightPreview() {
+  // A chosen time: Anki's window shows its screen then, with the settings as they are now.
+  if (lightAt !== null && page === "day") call("moment_at", { cfg: draft, minute: lightAt });
   const box = document.querySelector(".light-preview");
   const scene = lightScene();
   if (!box || !scene) return;
@@ -1203,7 +1314,7 @@ Kiso.setup({
       id: "screens", title: "Screens", icon: "screens", render: screensPage,
       slice: (d) => d.screens,
       revert: (d) => { d.screens = clone(saved.screens); dropMissingScenes(d); },
-      // Dim, blur and shuffle go back to defaults; which scenes show stays.
+      // Dim, blur, shuffle and backdrops go back to defaults; which scenes show stays.
       restore: (d) => {
         for (const [key, screen] of Object.entries(d.screens)) {
           const kept = { scenes: screen.scenes };
@@ -1212,7 +1323,7 @@ Kiso.setup({
         }
       },
       restoreLabel: "Reset dim, blur and shuffle",
-      restoreTitle: "Dim, blur and shuffle back to their defaults; your scenes stay. Nothing changes until Save.",
+      restoreTitle: "Dim, blur, shuffle and backdrops back to their defaults; your scenes stay. Nothing changes until Save.",
     },
     {
       // No Restore for Scenes: the default is no scenes at all.
@@ -1225,6 +1336,14 @@ Kiso.setup({
         d.scenes = clone(saved.scenes).concat(kept);
         d.images = clone(saved.images);
       },
+    },
+    {
+      id: "backdrops", title: "Backdrops", icon: "backdrops", render: backdropsPage,
+      slice: (d) => d.backdrops,
+      revert: (d) => { d.backdrops = clone(saved.backdrops); },
+      restore: (d) => { d.backdrops = clone(S.defaults.backdrops); },
+      restoreLabel: "Restore Backdrops defaults",
+      restoreTitle: "The deck table, add-on panel and outline back to their defaults. Nothing changes until Save.",
     },
     {
       id: "day", title: "Day & time", icon: "day", render: dayPage,
@@ -1257,7 +1376,13 @@ Kiso.setup({
       refreshPreviews();
     }, 120);
   },
-  beforeRender: (p) => { if (p !== "scenes") { stopPlaying(); call("end_moment"); } },
+  beforeRender: (p) => {
+    if (p !== "scenes") stopPlaying();
+    if (p !== "day") lightAt = null;
+    // A moment shown in Anki's window lasts while the page that chose it is showing: a day
+    // cycle scrubbed on Scenes, a time picked on Day & time's light strip.
+    if (!(p === "scenes" && scrub !== null) && !(p === "day" && lightAt !== null)) call("end_moment");
+  },
   afterRender: () => refreshPreviews(),
   onCancel: () => stopPlaying(),
   onSaveError: (err) => { if (err.page === "scenes") sel = err.field; },

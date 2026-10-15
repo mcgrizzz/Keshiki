@@ -587,6 +587,24 @@ def check(app, shots, base):
     until(app, lambda: renderer.preview is None, 5, "Cancel left the preview in the main window")
     print("PASS: Cancel drops unsaved edits without closing.")
 
+    # Previewing in Anki's window turned off (a slow computer): edits stay in the dialog until
+    # Save; turned on again, the edit as it is now shows there.
+    from keshiki.keshiki import settings_page
+    run_js(dlg, "$('#in-window').click()")
+    until(app, lambda: not dlg.kiso_bridge.in_window, 5, "the switch didn't reach Python")
+    assert settings_page.preferences() == {"preview_in_window": False}
+    run_js(dlg, "setv($$('input[aria-label=Blur]')[0], '12')")
+    until(app, lambda: run_js(dlg, "!$('#cancel').disabled"), 5)
+    pump(app, 0.6)
+    assert renderer.preview is None, "an edit reached Anki's window with previewing off"
+    shoot(dlg, "preview-off")
+    run_js(dlg, "$('#in-window').click()")
+    until(app, lambda: (renderer.preview or {}).get("screens", {}).get("main", {}).get("blur") == 12, 5,
+          "turning it back on didn't preview the edit")
+    run_js(dlg, "$('#cancel').click()")
+    until(app, lambda: renderer.preview is None, 5)
+    print("PASS: previewing in Anki's window can be turned off, and on again, from the footer.")
+
     run_js(dlg, "byText('#nav button', 'Day & time').click()")
     run_js(dlg, "byText('label', 'Use my location').querySelector('input').click()")
     # Nothing is looked up until the button is pressed; until then the details are open.

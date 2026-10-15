@@ -289,3 +289,6 @@ fieldset.dependent:disabled * { cursor: default; }
   .scene-side .scene-list { flex-direction: row; overflow: auto hidden; padding-bottom: 4px; }
   #main .scene-item { flex: none; width: 210px; }
 }
+
+/* The footer's "Preview in Anki's window" switch, at its left end. */
+footer .in-window { margin: 0 8px 0 0; color: var(--kiso-muted); white-space: nowrap; }

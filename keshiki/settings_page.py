@@ -21,6 +21,24 @@ from .sun import location_sun
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 _GEOM_KEY = "keshikiSettings"
+# How the settings window behaves on this computer, apart from the config, so Save and Cancel
+# never touch it: preview_in_window (unsaved edits and chosen moments show in Anki's window).
+PREFERENCES = library.ADDON_DIR / "user_files" / "preferences.json"
+
+
+def preferences() -> dict:
+    try:
+        prefs = json.loads(PREFERENCES.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return prefs if isinstance(prefs, dict) else {}
+
+
+def set_preference(key: str, value) -> None:
+    prefs = preferences()
+    prefs[key] = value
+    PREFERENCES.parent.mkdir(parents=True, exist_ok=True)
+    PREFERENCES.write_text(json.dumps(prefs, indent=1), encoding="utf-8")
 
 
 def page_html() -> str:
@@ -68,6 +86,8 @@ class SettingsBridge(kiso_settings.Bridge):
         # or exception) on it. eval_js reaches the page after the reply has gone.
         self.in_background = in_background
         self.eval_js = eval_js
+        # Off: Anki's window keeps what's saved while the settings are open (a slow computer).
+        self.in_window = preferences().get("preview_in_window", True) is not False
 
     def saved(self) -> dict:
         return migrate(self.mw.addonManager.getConfig(ADDON_PACKAGE) or {})[0]
@@ -84,7 +104,7 @@ class SettingsBridge(kiso_settings.Bridge):
         return {"cfg": cfg, "defaults": migrate({})[0], "images": library.list_images(), "trash": library.list_trash(),
                 "linked": folders.pictures(cfg), "missing": missing,
                 "templates": {k: new_scene(k) for k in ("single", "day", "progress")},
-                "percent": self._percent(), "window": self._window_size()}
+                "percent": self._percent(), "window": self._window_size(), "in_window": self.in_window}
 
     def _thumbs(self, cfg_or_names) -> None:
         names = cfg_or_names if isinstance(cfg_or_names, list) else list(folders.pictures(cfg_or_names))
@@ -152,9 +172,19 @@ class SettingsBridge(kiso_settings.Bridge):
         return {"cfg": cfg}
 
     def op_draft(self, cfg) -> None:
-        # Unsaved edits show live in the main window until Save or Cancel.
+        # Unsaved edits show live in the main window until Save or Cancel (unless that's off).
         if self.renderer:
-            self.renderer.set_preview(migrate(cfg)[0] if cfg else None)
+            self.renderer.set_preview(migrate(cfg)[0] if cfg and self.in_window else None)
+
+    def op_in_window(self, on) -> None:
+        """Turn previewing in Anki's window on or off, for good. The page sends its draft and
+        moments again afterwards, which show only when it's on."""
+        self.in_window = bool(on)
+        set_preference("preview_in_window", self.in_window)
+        if self.renderer and not self.in_window:
+            self.renderer.set_preview(None)
+            if self.renderer.scene_look is not None:
+                self.renderer.show_scene_moment(None)
 
     def op_end_moment(self, _arg) -> None:
         if self.renderer and self.renderer.scene_look is not None:
@@ -203,7 +233,7 @@ class SettingsBridge(kiso_settings.Bridge):
         if self.renderer and "show" in arg:
             # The scrubbed moment in Anki's main window too, with the current screen's dim and blur.
             moment = None
-            if arg["show"] and out:
+            if arg["show"] and out and self.in_window:
                 cfg = migrate(arg.get("cfg") or {})[0]
                 _, look = screen_source(cfg, self.renderer.screen())
                 moment = {"layers": out, "dim": round(float(look.get("dim") or 0) / 100, 3),
@@ -233,7 +263,7 @@ class SettingsBridge(kiso_settings.Bridge):
     def op_moment_at(self, arg) -> None:
         """Anki's window as its screen would look at a minute of today, with the draft config
         (the Today strip on the Day & time page), until end_moment."""
-        if not self.renderer:
+        if not self.renderer or not self.in_window:
             return
         cfg = migrate(arg["cfg"])[0]
         now, offset = _now()

@@ -1,9 +1,18 @@
 import json
 from types import SimpleNamespace
 
-from keshiki import library
+import pytest
+
+from keshiki import library, settings_page
 from keshiki.config import migrate
 from keshiki.settings_page import SettingsBridge, page_html
+
+
+@pytest.fixture(autouse=True)
+def preferences_file(tmp_path, monkeypatch):
+    path = tmp_path / "preferences.json"
+    monkeypatch.setattr(settings_page, "PREFERENCES", path)
+    return path
 
 
 class FakeManager:
@@ -21,10 +30,16 @@ class FakeRenderer:
     launch_seed = 0
 
     def __init__(self):
-        self.preview, self.cfg = None, None
+        self.preview, self.cfg, self.scene_look = None, None, None
 
     def set_preview(self, cfg):
         self.preview = cfg
+
+    def show_scene_moment(self, look):
+        self.scene_look = look
+
+    def screen(self):
+        return "main"
 
     def set_config(self, cfg):
         self.cfg = cfg
@@ -64,6 +79,41 @@ def test_draft_previews_and_save_writes():
     assert b.renderer.preview["transition_seconds"] == 4
     assert send(b, "save", cfg) == {"cfg": cfg}
     assert b.mw.addonManager.cfg == cfg and b.renderer.cfg == cfg and b.renderer.preview is None
+
+
+def test_preview_in_window_can_be_turned_off_for_good(monkeypatch, preferences_file):
+    monkeypatch.setattr(library, "image_url", lambda name: "/img/" + name)
+    b = bridge()
+    cfg = migrate({})[0]
+    cfg["transition_seconds"] = 4
+    scene = {"kind": "single", "versions": [{"label": "", "image": "a.jpg"}]}
+    moment = {"scene": scene, "position": 0, "show": True, "cfg": cfg}
+    assert send(b, "state")["in_window"] is True
+    send(b, "draft", cfg)
+    send(b, "compose", moment)
+    assert b.renderer.preview and b.renderer.scene_look
+    # Off: what Anki's window was previewing goes, and nothing new reaches it.
+    send(b, "in_window", False)
+    assert b.renderer.preview is None and b.renderer.scene_look is None
+    send(b, "draft", cfg)
+    send(b, "compose", moment)
+    send(b, "moment_at", {"cfg": cfg, "minute": 600})
+    assert b.renderer.preview is None and b.renderer.scene_look is None
+    # Saving still reaches it, and the switch is remembered apart from the config.
+    send(b, "save", cfg)
+    assert b.renderer.cfg == cfg and "preview_in_window" not in b.mw.addonManager.cfg
+    assert json.loads(preferences_file.read_text()) == {"preview_in_window": False}
+    assert send(bridge(), "state")["in_window"] is False
+    # On again: the page's draft previews as before.
+    b = bridge()
+    send(b, "in_window", True)
+    send(b, "draft", cfg)
+    assert b.renderer.preview["transition_seconds"] == 4
+
+
+def test_a_broken_preferences_file_means_the_defaults(preferences_file):
+    preferences_file.write_text("[not a dict")
+    assert send(bridge(), "state")["in_window"] is True
 
 
 def test_save_refuses_a_bad_location():

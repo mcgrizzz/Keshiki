@@ -70,6 +70,11 @@ function stageFor(box) {
   return stages.get(box);
 }
 
+// Whether edits and chosen moments show in Anki's window too (the footer's switch, kept apart
+// from the config: settings_page.py, preferences).
+const inWindow = () => !S || S.in_window !== false;
+const andWindow = () => (inWindow() ? "here and in Anki's window" : "here");
+
 function refreshPreviews() {
   for (const box of document.querySelectorAll("[data-screen]")) {
     call("look", { cfg: draft, screen: box.dataset.screen }).then((look) => {
@@ -109,7 +114,8 @@ function screensPage() {
   }
   const { main, study, done } = draft.screens;
   return [
-    ...pageHead("Screens", "Choose what shows behind the deck list and while you study. Edits preview in Anki's main window until you save."),
+    ...pageHead("Screens", "Choose what shows behind the deck list and while you study. "
+      + (inWindow() ? "Edits preview in Anki's main window until you save." : "Edits show in Anki's main window once you save.")),
     screenCard("main", "Deck list", "Your decks, and while Anki starts",
       sceneChooser(main), lookControls(main), backdropSwitch(main)),
     screenCard("study", "Studying", "Overview, reviews and the finished screen",
@@ -445,7 +451,7 @@ function sceneEditor(scene) {
     h("span", { className: "readout" }),
     timed(scene) && h("div", { className: "preview-controls" },
       h("button", { type: "button", id: "backToNow", hidden: scrub === null,
-                    title: "Stop previewing this moment, here and in Anki's window",
+                    title: `Stop previewing this moment, ${andWindow()}`,
                     onclick: () => { stopPlaying(); scrub = null; updateScenePreview(preview, false); } }, "Back to now"),
       h("select", { id: "playSpeed", "aria-label": "Timelapse length",
                     title: scene.kind === "day" ? "Timelapse: how long the whole day takes to play"
@@ -457,8 +463,8 @@ function sceneEditor(scene) {
         PLAY_SPEEDS.map(([secs, label]) => h("option", { value: secs, selected: secs === playSeconds },
           `${scene.kind === "day" ? "24 h" : "All"} in ${label}`))),
       h("button", { type: "button", className: "play", id: "play", "aria-label": "Play",
-        title: scene.kind === "day" ? "Play the next 24 hours, here and in Anki's window"
-                                    : "Play on to finished, here and in Anki's window",
+        title: scene.kind === "day" ? `Play the next 24 hours, ${andWindow()}`
+                                    : `Play on to finished, ${andWindow()}`,
         onclick: () => (playing ? pausePlaying() : play(scene, preview)) }, icon("play"))));
   const panel = h("section", { className: "panel editor" },
     h("div", { className: "editor-head" },
@@ -764,7 +770,7 @@ function setPlayButton(scene, on) {
   button.replaceChildren(icon(on ? "pause" : "play"));
   button.setAttribute("aria-label", on ? "Pause" : "Play");
   button.title = on ? "Pause" : scene.kind === "day"
-    ? "Play the next 24 hours, here and in Anki's window" : "Play on to finished, here and in Anki's window";
+    ? `Play the next 24 hours, ${andWindow()}` : `Play on to finished, ${andWindow()}`;
 }
 
 // The ribbon: each version's image along the axis, fading in where its fade runs.
@@ -1230,7 +1236,7 @@ function lightPanel() {
                              title: "Click or drag to see the light at another time",
                              oninput: (e) => { lightAt = Number(e.target.value); placeHand(); updateLightPreview(); } });
   const now = h("button", { type: "button", className: "link", id: "lightNow", hidden: lightAt === null,
-                            title: "Stop previewing this time, here and in Anki's window",
+                            title: `Stop previewing this time, ${andWindow()}`,
                             onclick: () => { lightAt = null; call("end_moment"); placeHand(); updateLightPreview(); } }, "Back to now");
   const placeHand = () => { hand.style.left = (100 * minute()) / 1440 + "%"; now.hidden = lightAt === null; };
   placeHand();
@@ -1358,8 +1364,16 @@ Kiso.setup({
       },
     },
   ],
-  unsaved: (pages) => `Unsaved changes on ${pages}, previewing in the main window`,
+  // Whether unsaved edits show in Anki's window, beside the unsaved-changes status. A slow
+  // computer can keep Anki's window out of it: it then changes only on Save.
+  footer: () => h("label", { className: "check in-window",
+                             title: "Show unsaved edits, and moments you pick on a timeline, in Anki's main window as you make them" },
+    h("input", { type: "checkbox", id: "in-window", checked: true, onchange: (e) => {
+      S.in_window = e.target.checked;
+      call("in_window", S.in_window).then(() => changed(true));   // sends the draft and moments again
+    } }), "Preview in Anki's window"),
   onLoad: (state) => {
+    document.getElementById("in-window").checked = state.in_window !== false;
     S.anchors = { sunrise: 390, sunset: 1170 };
     S.window = S.window || [16, 10];
     document.documentElement.style.setProperty("--kk-window", String(S.window[0] / S.window[1]));

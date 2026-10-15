@@ -21,7 +21,7 @@ Open **Tools → 🖼️ Keshiki**.
 2. On **Scenes**, under **New scene**, choose **Day cycle**, then pick a picture for each version. Drag along the strip under the preview to see any time of day, or press ▶ to watch the next 24 hours as a timelapse. Anki's main window follows along until you press **Back to now**.
 3. Back on **Screens**, give **Studying** its own scenes if you like, and set dim and blur. Turn on **Use backdrops** for the deck list and adjust them on **Backdrops**.
 
-Your edits show in the main window as you make them. **Save** keeps them and **Cancel** puts things back.
+Your edits show in the main window as you make them; if that's slow on your computer, untick **Preview in Anki's window** at the bottom, and it changes only when you save. **Save** keeps them and **Cancel** puts things back.
 
 ![The Screens page: what shows behind the deck list and while you study](docs/images/settings-screens.png)
 

@@ -248,6 +248,36 @@ def check(app, shots, base):
     mw.moveToState("deckBrowser")
     until(app, lambda: showing(b), 10, "the all-done scene didn't show on the deck list")
     print("PASS: once everything is studied, the all-done scene shows on the deck list.")
+
+    # New cards (an operation outside the reviewer, like a sync) end it on the deck list.
+    from aqt.operations.note import add_note
+    cfg["screens"]["study"]["same_as_main"] = True   # no progress scene on any screen now
+    renderer.set_config(cfg)
+    more = mw.col.decks.id("More")
+    for i in range(3):
+        note = mw.col.new_note(mw.col.models.by_name("Basic"))
+        note["Front"], note["Back"] = f"more {i}", "..."
+        add_note(parent=mw, note=note, target_deck_id=more).run_in_background()
+    until(app, lambda: showing(a), 10, "new cards didn't end the all-done scene")
+    # In the reviewer, answering doesn't work out "all done" again (every deck's counts).
+    from keshiki.keshiki import progress
+    real, calls = progress.nothing_left, []
+    progress.nothing_left = lambda col: calls.append(1) or real(col)
+    try:
+        mw.col.decks.select(more)
+        mw.moveToState("review")
+        until(app, lambda: mw.state == "review" and mw.reviewer.card is not None, 10)
+        first = mw.reviewer.card.id
+        calls.clear()
+        mw.reviewer._showAnswer()
+        until(app, lambda: mw.reviewer.state == "answer")
+        mw.reviewer._answerCard(3)
+        until(app, lambda: mw.reviewer.card is not None and mw.reviewer.card.id != first, 10, "the next card didn't come")
+        pump(app, 0.5)
+        assert not calls, f"'all done' was worked out {len(calls)} times for one answer"
+    finally:
+        progress.nothing_left = real
+    print("PASS: new cards end all done on the deck list; answering a card doesn't check it again.")
     mw.moveToState("overview")
     until(app, lambda: mw.state == "overview", 5)
 

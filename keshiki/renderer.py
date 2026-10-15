@@ -25,7 +25,7 @@ from . import folders, library
 from ._kiso import config as kiso_config
 from ._kiso.hooks import Subscriptions
 from .config import ADDON_PACKAGE, migrate
-from .schedule import build_look
+from .schedule import build_look, screen_source
 from .sun import location_sun
 
 log = logging.getLogger(__name__)
@@ -69,7 +69,7 @@ class Renderer(QObject):
         self.subs.add(gui_hooks.webview_will_set_content, self.on_will_set_content, "Page background")
         self.subs.add(gui_hooks.webview_did_inject_style_into_page, self.on_did_inject_style, "Page background")
         self.subs.add(gui_hooks.state_did_change, refresh_progress, "Screen change")
-        self.subs.add(gui_hooks.reviewer_did_answer_card, refresh_progress, "Answer")
+        self.subs.add(gui_hooks.reviewer_did_answer_card, self.on_answer, "Answer")
         self.subs.add(gui_hooks.operation_did_execute, self.on_operation, "Collection change")
         # A new day brings new cards: "all done" may no longer hold.
         self.subs.add(gui_hooks.day_did_change, refresh_progress, "New day")
@@ -183,9 +183,31 @@ class Renderer(QObject):
             self._all_done = nothing_left(col)
         return self._all_done
 
-    def on_operation(self, changes, handler) -> None:
-        if getattr(changes, "study_queues", False):
+    def on_answer(self, *_) -> None:
+        if self.shows_progress():
             self.refresh(progress_changed=True)
+
+    def on_operation(self, changes, handler) -> None:
+        if not getattr(changes, "study_queues", False):
+            return
+        # Answering a card is an operation too. In the reviewer nothing but a progress scene
+        # moves with it: "all done" can't come true there (Anki leaves the reviewer when the
+        # cards run out, and that screen change checks again), and working it out goes through
+        # every deck's counts. Elsewhere (cards added, a sync, deck options) it may change.
+        if self.mw.state == "review" and not self.shows_progress():
+            return
+        self.refresh(progress_changed=True)
+
+    def shows_progress(self) -> bool:
+        """Whether a screen shows a progress scene (they can't be made now; older configs may have one)."""
+        cfg = self.active_config()
+        progress = {s.get("id") for s in cfg.get("scenes") or [] if s.get("kind") == "progress"}
+        if not progress:
+            return False
+        # The scenes each screen really shows (Studying may follow the deck list's).
+        done = cfg["screens"].get("done") or {}
+        sources = [screen_source(cfg, screen)[0] for screen in ("main", "study")] + [done if done.get("enabled") else None]
+        return any(progress & set((source or {}).get("scenes") or []) for source in sources)
 
     # -- pushing it to the page -------------------------------------------
 

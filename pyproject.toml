@@ -1,6 +1,6 @@
 [project]
 name = "keshiki"
-version = "0.2.0"
+version = "0.2.1"
 description = "Background scenes for Anki that follow the time of day and your review progress"
 requires-python = ">=3.10"
 

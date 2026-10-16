@@ -7,6 +7,14 @@
 .daylight-wrap input[type=range] { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
 #main #lightNow { margin-top: 2px; padding-left: 0; }
 .daylight-wrap:focus-within { outline: 2px solid var(--kiso-link); outline-offset: 2px; border-radius: 5px; }
+/* As on a scene's ribbon: a grip says the hand can be dragged, and the pointer shows its time. */
+.daylight-wrap .hand::after { content: ""; position: absolute; left: 50%; top: 50%; width: 9px; height: 18px; transform: translate(-50%, -50%);
+                              border-radius: 4px; background: var(--kiso-fg); box-shadow: 0 0 0 1px var(--kiso-card), 0 1px 3px #0006; }
+.daylight-wrap .ghost { position: absolute; z-index: 1; top: 0; bottom: 0; width: 0; border-left: 1px dashed #fffc; pointer-events: none; }
+.daylight-wrap .ghost[hidden] { display: none; }
+.daylight-wrap .ghost span { position: absolute; top: 50%; left: 6px; transform: translateY(-50%); padding: 1px 6px; border-radius: 999px;
+                             background: #000b; color: #fff; font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.daylight-wrap .ghost.flip span { left: auto; right: 6px; }
 /* Light: a small picture in that light beside its controls. */
 .indent-help { margin-left: 26px; }
 .choices.inline { flex-direction: row; flex-wrap: wrap; gap: 4px 18px; margin-top: 0; }
@@ -20,8 +28,16 @@
 .light-preview .readout { position: absolute; z-index: 1; left: 8px; bottom: 6px; padding: 1px 7px; border-radius: 999px;
                           background: #000a; color: #fff; font-size: 11.5px; font-variant-numeric: tabular-nums; }
 @media (max-width: 860px) { .light-body { grid-template-columns: minmax(0, 1fr); } .light-preview { max-width: 260px; } }
-.location-edit { margin-top: 10px; padding: 2px 0 6px 14px; border-left: 2px solid var(--kiso-soft); }
-.location-edit > .field:first-child { margin-top: 4px; }
+.location-edit { margin-top: 4px; }
+/* Day & time: a wider label column ("Crossfade duration", "Fallback sunrise"); a choice's
+   settings sit under it, indented to its label, their labels' column that much narrower. */
+.aligned.day-panel { --kk-label: 140px; }
+.option-body { margin: 0 0 8px 26px; }
+.option-body > .field:first-child { margin-top: 4px; }
+.aligned .option-body .field { grid-template-columns: calc(var(--kk-label) - 26px) minmax(0, 1fr); }
+.locate .place { min-width: 0; }
+/* The day's strip ends where the sliders do (their value column is 44px, after a 10px gap). */
+.preview-time > div { margin-right: 54px; }
 #main #locate { margin: 0; }
 .locate { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 /* A miniature main window: the real layer code behind mock Anki chrome, which scales with
@@ -52,17 +68,47 @@
 .screen-card { container-type: inline-size; }
 .screen-body { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 4px 20px; align-items: start; }
 .screen-controls > .field:first-child, .screen-controls > .check:first-child { margin-top: 0; }
-.screen-controls .field { grid-template-columns: 96px minmax(0, 1fr); }
+/* One label column and one control column in every card (.aligned): under a checkbox the
+   dependency line indents the labels by --kk-dep, and their column is that much narrower, so
+   the controls line up with the ones above. */
+.aligned { --kk-label: 124px; --kk-dep: 16px; --kk-gap: 12px; }
+.screen-controls { --kk-label: 100px; --kk-dep: 16px; --kk-gap: 10px; }
+.aligned .field, .screen-controls .field { grid-template-columns: var(--kk-label) minmax(0, 1fr); column-gap: var(--kk-gap); }
+.aligned fieldset.dependent, .screen-controls fieldset.dependent { margin-left: 4px; padding-left: calc(var(--kk-dep) - 6px); }
+.aligned fieldset.dependent .field, .screen-controls fieldset.dependent .field {
+  grid-template-columns: calc(var(--kk-label) - var(--kk-dep)) minmax(0, 1fr); }
 .screen-controls select.shuffle { justify-self: start; width: auto; }
+/* Scenes: the chosen ones, then the dropdown for another under them; the label at the top. */
+.scene-field { align-items: start; }
+.scene-field > .label { padding-top: 5px; }
+.scene-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
+.scene-pick select { max-width: 100%; }
 @container (max-width: 600px) { .screen-body { grid-template-columns: 176px minmax(0, 1fr); gap: 4px 14px; } }
 @container (max-width: 440px) { .screen-body { grid-template-columns: minmax(0, 1fr); } .screen-body .mock { max-width: 300px; } }
-.backdrop-switch .check { margin: 0; display: inline-flex; }
-.backdrop-switch .link { margin-left: 10px; }
-/* The Backdrops page: a bigger miniature, with a stand-in for other add-ons under the table. */
-.backdrop-preview .mock { max-width: 640px; margin: 0 auto; }
-.backdrop-preview .help { text-align: center; margin: 8px auto 0; }
-.backdrop-preview .help.warn { color: var(--kiso-fg); }
-.backdrop-mock .mock-bar, .backdrop-mock .mock-table, .backdrop-mock .mock-addon { font-size: min(12px, 2.1cqw); }
+.backdrop-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
+.backdrop-switch .check { margin: 0; display: inline-flex; white-space: nowrap; }
+#main .backdrop-switch .link { white-space: nowrap; }
+/* The Backdrops page: whether any screen uses them, by the heading; a miniature about 240px
+   high, with a stand-in for the statistics under the decks. Where the window is tall enough
+   it stays at the top while the cards scroll under it. */
+.page-status { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: -10px 0 14px; color: var(--kiso-muted); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--kiso-muted); }
+.page-status.on { color: var(--kiso-fg); }
+.page-status.on .status-dot { background: #3a9a4b; }
+#main #manageScreens { padding: 0 4px; }
+.backdrop-preview { padding: 10px; }
+.backdrop-preview .mock { width: min(100%, 384px); margin: 0 auto; }
+@media (min-height: 600px) {
+  .backdrop-preview { position: sticky; top: -18px; z-index: 5; box-shadow: 0 6px 12px -6px #0006; }
+}
+.backdrop-mock .mock-bar, .backdrop-mock .mock-table, .backdrop-mock .mock-addon { font-size: min(12px, 2.4cqw); }
+/* The part of the preview the card under the pointer (or with focus) sets. */
+.backdrop-mock .mock-table, .backdrop-mock .mock-addon { outline: 2px solid transparent; outline-offset: 3px;
+                                                         transition: outline-color 0.15s; }
+.backdrop-mock.mark-table .mock-table, .backdrop-mock.mark-addon .mock-addon { outline-color: var(--kiso-accent); }
+.backdrop-mock.mark-text .mock-row, .backdrop-mock.mark-text .mock-addon > div:first-child, .backdrop-mock.mark-text .mock-stats {
+  text-decoration: underline 1px var(--kiso-accent); text-underline-offset: 2px; }
+.aligned select.text-outline, .color-choice select { justify-self: start; width: auto; }
 .backdrop-mock .mock-table { background: color-mix(in srgb, var(--canvas-elevated, #363636) var(--kk-table, 40%), transparent);
                              backdrop-filter: blur(calc(var(--kk-table-frost, 0px) * 0.5)); }
 .mock-addon { width: fit-content; margin: 4% auto 0; text-align: center; border: 1px solid transparent; }
@@ -78,7 +124,7 @@
 }
 .color-choice { display: flex; align-items: center; gap: 8px; }
 .color-choice input[type=color] { width: 40px; height: 26px; padding: 0 2px; border: 1px solid var(--kiso-border); border-radius: 6px; background: none; }
-.color-choice input[type=color]:disabled { opacity: .4; }
+.color-choice input[type=color][hidden] { display: none; }
 
 /* Under its checkbox: indented, and dimmed while the checkbox is off. */
 fieldset.dependent { min-width: 0; margin: 6px 0 0 7px; padding: 0 0 0 18px; border: 0; border-left: 2px solid var(--kiso-soft); }
@@ -99,7 +145,9 @@ fieldset.dependent:disabled * { cursor: default; }
 .scene-list { display: flex; flex-direction: column; gap: 4px; }
 #main .scene-item { display: grid; grid-template-columns: 54px minmax(0, 1fr); width: 100%; min-width: 0; margin: 0; box-sizing: border-box; gap: 2px 10px; align-items: center; text-align: left;
                     padding: 6px; border-color: transparent; background: none; }
-#main .scene-item[aria-current="true"] { background: var(--kiso-card); border-color: var(--kiso-border); }
+/* The scene in the editor: tinted with the accent, and edged with it. */
+#main .scene-item[aria-current="true"] { background: color-mix(in srgb, var(--kiso-accent) 16%, var(--kiso-card));
+                                         border-color: var(--kiso-accent); box-shadow: inset 3px 0 0 var(--kiso-accent); }
 .scene-item .thumb { grid-row: span 2; width: 54px; height: 36px; border-radius: 4px; background: var(--kiso-soft) center / cover; }
 .scene-item small { color: var(--kiso-muted); }
 .scene-item .item-name, .scene-item small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -168,7 +216,7 @@ fieldset.dependent:disabled * { cursor: default; }
 .vhead { padding-bottom: 6px; }
 .version { padding: 12px 0; border-top: 1px solid var(--kiso-soft); }
 .version > .pick { grid-area: 1 / 1; }
-.version > input.label { grid-area: 1 / 2; margin-top: 6px; }
+.version > input.label, .version > .vname { grid-area: 1 / 2; margin-top: 6px; }
 .version > .c-start, .vhead > .c-start { grid-area: 1 / 3; }
 .version > .c-end, .vhead > .c-end { grid-area: 1 / 4; }
 .vhead > .c-name { grid-area: 1 / 2; }
@@ -176,6 +224,9 @@ fieldset.dependent:disabled * { cursor: default; }
 .vhead span { font-size: 12px; color: var(--kiso-muted); }
 .cell { display: flex; flex-direction: column; align-items: stretch; gap: 6px; min-width: 0; padding-top: 6px; }
 .cell > .unit { min-height: 28px; }
+/* A labelled length (Delay, Transition duration): the box and its unit wrap under the label as one. */
+.cell > .unit.labelled { flex-wrap: wrap; gap: 2px 8px; }
+.unit.labelled > .unit { white-space: nowrap; }
 .cell-label { display: none; font-size: 12px; color: var(--kiso-muted); }
 .when { min-height: 1.4em; margin-top: -2px; color: var(--kiso-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 /* The row showing in the preview: its picture and name are marked. */
@@ -185,6 +236,15 @@ fieldset.dependent:disabled * { cursor: default; }
               color: var(--kiso-muted); font-size: 18px; }
 #main .pick.empty { border-style: dashed; }
 .version input.label { font-weight: 600; width: 100%; }
+/* A version's name: a heading, with Rename beside it (and the name itself clicks to rename). */
+#main .vname { display: inline-flex; align-items: center; gap: 6px; justify-self: start; max-width: 100%; min-width: 0;
+               padding: 4px 6px; margin-left: -6px; border-color: transparent; background: none; font-size: 14px;
+               font-weight: 600; text-align: left; }
+#main .vname:hover { border-color: var(--kiso-border); }
+.vname-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vname-text.unnamed { color: var(--kiso-muted); font-weight: 400; font-style: italic; }
+.vname .icon { flex: none; width: 14px; height: 14px; color: var(--kiso-muted); }
+.vname:hover .icon, .vname:focus-visible .icon { color: var(--kiso-link); }
 .version .unit input[type=number] { width: 60px; }
 .version select { width: 100%; min-width: 0; }
 .version .unit input[type=time] { width: 112px; }
@@ -219,12 +279,14 @@ fieldset.dependent:disabled * { cursor: default; }
 #main .album-tile .pick, #main .album-add { box-sizing: border-box; width: 96px; height: 60px; }
 #main .album-tile.shown .pick { box-shadow: 0 0 0 2px var(--kiso-canvas), 0 0 0 4px var(--kiso-accent); }
 /* Always shown (a hover-only control is easy to miss), fully on hover. */
-#main .album-tile .remove { position: absolute; top: 5px; right: 5px; box-sizing: border-box; width: 20px; height: 20px;
+/* A button like the page's others (not a badge that could read as "hidden"). */
+#main .album-tile .remove { position: absolute; top: 4px; right: 4px; box-sizing: border-box; width: 24px; height: 22px;
                             min-width: 0; min-height: 0; padding: 0; display: grid; place-items: center; line-height: 0;
-                            border-radius: 50%; background: #000b; color: #fff; opacity: 0.8; transition: opacity 0.15s; }
+                            border: 1px solid var(--kiso-border); border-radius: 6px; background: var(--kiso-card);
+                            color: var(--kiso-fg); box-shadow: 0 1px 3px #0005; }
 #main .album-tile .remove svg { width: 12px; height: 12px; }
-#main .album-tile .remove.hide svg { width: 13px; height: 13px; stroke-width: 2; }
-#main .album-tile .remove:hover, #main .album-tile .remove:focus-visible { opacity: 1; background: #000; }
+#main .album-tile .remove.hide svg { width: 14px; height: 14px; stroke-width: 2; }
+#main .album-tile .remove:hover, #main .album-tile .remove:focus-visible { border-color: var(--kiso-link); color: var(--kiso-link); }
 #main .album-add { padding: 4px 8px; font-size: 12px; line-height: 1.25; white-space: normal; border-style: dashed; }
 /* Combining single pictures: a ticked list with each picture's thumbnail. */
 .combine-dialog .combine-list { display: flex; flex-direction: column; gap: 2px; max-height: 40vh; overflow-y: auto; }
@@ -245,7 +307,10 @@ fieldset.dependent:disabled * { cursor: default; }
 .library-dialog .tabs { display: flex; gap: 4px; }
 #modal .tab { border-radius: 999px; padding: 4px 12px; }
 #modal .tab[aria-selected="true"] { background: var(--kiso-accent); border-color: var(--kiso-accent); color: var(--kiso-accent-fg); }
-.library-body { min-height: 200px; max-height: 60vh; overflow-y: auto; }
+.library-body { display: flex; flex-direction: column; min-height: 200px; max-height: 60vh; overflow-y: auto; }
+.library-scope { margin: 4px 0 10px; }
+.library-scope[hidden] { display: none; }
+.library-body .empty-note { margin: auto; text-align: center; }
 .library-grid { max-height: none; }
 .lib-tile { position: relative; aspect-ratio: 16 / 10; border-radius: 6px; overflow: hidden; background: var(--kiso-soft); }
 .lib-thumb { position: absolute; inset: 0; background: center / cover; }
@@ -266,15 +331,18 @@ fieldset.dependent:disabled * { cursor: default; }
 
 /* A narrow editor (its own width, not the window's: the scene list may sit beside it or
    above it): each version on two lines, the picture and name, then its two cells side by
-   side, each labelled; the preview is smaller, so the timing gets the room. */
+   side, each labelled. On one line the cells are too narrow for the longer rules ("After
+   Night's transition ends") below about 680px. Narrower still, the preview is smaller. */
 .editor { container-type: inline-size; }
 @container (max-width: 600px) {
   .preview { width: min(100%, calc(min(26vh, 260px) * var(--kk-window, 1.6))); }
+}
+@container (max-width: 680px) {
   /* Two equal halves on line two: 64 + 1fr against 26 + 1fr + 26. */
   .versions:not(.single) { grid-template-columns: 64px minmax(0, 1fr) 26px minmax(0, 1fr) 26px; }
   .vhead { display: none; }
   .version > .pick { grid-area: 1 / 1; align-self: center; }
-  .version > input.label { grid-area: 1 / 2 / auto / 5; margin: 0; align-self: center; }
+  .version > input.label, .version > .vname { grid-area: 1 / 2 / auto / 5; margin: 0; align-self: center; }
   .version > .c-remove { grid-area: 1 / 5; margin: 0; align-self: center; }
   .version > .c-start { grid-area: 2 / 1 / auto / 3; padding-top: 10px; }
   .version > .c-end { grid-area: 2 / 3 / auto / 6; padding-top: 10px; }
@@ -283,11 +351,17 @@ fieldset.dependent:disabled * { cursor: default; }
 
 /* A narrow window: the scene list becomes a strip above the editor, which gets the full width. */
 @media (max-width: 920px) {
-  .scenes { grid-template-columns: minmax(0, 1fr); }
-  .scene-side { position: static; max-height: none; }
+  .scenes { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  /* Its parts become the page's: the New scene buttons and the library link scroll away, and the
+     list of scenes, a strip, stays at the top while the editor scrolls under it. */
+  .scene-side { display: contents; }
   .list-actions { flex-direction: row; flex-wrap: wrap; align-items: center; }
-  .scene-side .scene-list { flex-direction: row; overflow: auto hidden; padding-bottom: 4px; }
-  #main .scene-item { flex: none; width: 210px; }
+  .scene-side .scene-list { position: sticky; top: -18px; z-index: 5; flex-direction: row; overflow: auto hidden;
+                            margin: 0 -22px; padding: 6px 22px; background: var(--kiso-canvas);
+                            box-shadow: 0 1px 0 var(--kiso-soft); }
+  #main .scene-item { flex: none; width: 200px; padding: 4px 6px; }
+  .scene-item .thumb { width: 48px; height: 30px; }
+  #main .library-link { justify-self: start; margin-top: -6px; }
 }
 
 /* The footer's "Preview in Anki's window" switch, at its left end. */

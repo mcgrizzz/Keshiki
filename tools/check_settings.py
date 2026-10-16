@@ -102,7 +102,7 @@ def check(app, shots, base):
     assert run_js(dlg, "$('#playSpeed').selectedOptions[0].textContent") == "24 h in 10 s"
     # Scrub to 13:00: the preview shows the day image alone.
     run_js(dlg, "setv($('.ribbon input'), 780)")
-    until(app, lambda: run_js(dlg, "$('.preview .readout').textContent") == "13:00", 5)
+    until(app, lambda: run_js(dlg, "$('.preview .readout').textContent") == "Preview, 13:00", 5)
     until(app, lambda: run_js(dlg, "$$('.preview .keshiki-layer').filter(e => !e.dataset.leaving).map(e => e.dataset.src.split('/').pop())")
           == ["day.png"], 5, "preview at 13:00 isn't the day image")
     shoot(dlg, "scene-day")
@@ -110,15 +110,16 @@ def check(app, shots, base):
 
     # Working on a version shows it at the moment it's fully in, the end of its row's times
     # (dusk: the setting sun from +12° to the horizon, a few minutes before the 19:30 sunset).
-    run_js(dlg, "$$('.version input.label')[2].focus()")
+    run_js(dlg, "$$('.version .vname')[2].focus()")
     until(app, lambda: run_js(dlg, "$('.preview .readout').textContent") ==
-          run_js(dlg, "(() => { const m = S.marks.find(m => m.index === 2); return hhmm(m.start + m.fade); })()"),
+          run_js(dlg, "(() => { const m = S.marks.find(m => m.index === 2); return 'Preview, ' + hhmm(m.start + m.fade); })()"),
           5, "focusing a version didn't preview it")
     fully_in = run_js(dlg, "$('.preview .readout').textContent")
     assert "19:2" in fully_in, fully_in
     until(app, lambda: run_js(dlg, "$$('.version.showing').map(r => r.dataset.index)") == ["2"], 5,
           "the version showing isn't marked")
     # Timelapse: the button is on top (not covered by the picture), plays the whole day and stops at the end.
+    run_js(dlg, "$('main').scrollTop = 0")   # focusing the version scrolled to it
     assert run_js(dlg, """(() => { const b = $('#play').getBoundingClientRect();
         return document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2).closest('#play') !== null; })()"""), \
         "the play button is covered"
@@ -224,30 +225,50 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "$$('.version').length") == 4, 5)
     print("PASS: a version at a set time fits the panel, and editing its time keeps focus and scroll.")
 
-    # A new version follows the last: it starts as Night is fully in, with no time to set.
+    # A new version follows the last: it starts after Night's transition ends, with no time to
+    # set, and opens with its name box.
     day_scene = "draft.scenes.find(s => s.kind === 'day')"
     run_js(dlg, "byText('button', '+ Add version').click()")
     until(app, lambda: run_js(dlg, "$$('.version').length") == 5, 5)
     starts = "$$('.version')[4].querySelector('select')"
     assert run_js(dlg, f"{starts}.value") == "after"
-    assert run_js(dlg, f"{starts}.selectedOptions[0].textContent") == "When Night is fully in"
+    assert run_js(dlg, f"{starts}.selectedOptions[0].textContent") == "After Night's transition ends"
+    until(app, lambda: run_js(dlg, "document.activeElement === $$('.version')[4].querySelector('input.label')"), 5,
+          "a new version's name box isn't open")
     run_js(dlg, f"{day_scene}.versions[4].image = 'dawn.png'; {day_scene}.versions[4].label = 'Midnight'; changed(true)")
     night_full = "(() => { const n = S.marks.find(m => m.index === 3); return (n.start + n.fade) % 1440; })()"
     midnight = "(S.marks.find(m => m.index === 4) || {}).start"
     until(app, lambda: run_js(dlg, midnight) is not None, 5, "the new version has no time")
     assert run_js(dlg, midnight) == run_js(dlg, night_full)
-    # A wait after Night: no rebuild, and the time follows.
+    # A delay after Night: no rebuild, and the time follows.
     run_js(dlg, "const w = $('.version .wait input'); w.focus(); setv(w, '15')")
     until(app, lambda: run_js(dlg, midnight) == (run_js(dlg, night_full) + 15) % 1440, 5, "the wait didn't move it")
     assert run_js(dlg, "document.activeElement === $('.version .wait input')"), "the wait box lost its focus"
-    # Renaming Night renames the option below it at once.
-    run_js(dlg, "const n = $$('.version input.label')[3]; n.value = 'Late night'; n.dispatchEvent(new Event('input'))")
-    assert run_js(dlg, f"{starts}.selectedOptions[0].textContent") == "When Late night is fully in"
-    run_js(dlg, "const n = $$('.version input.label')[3]; setv(n, 'Night')")
-    # Its rule and wait under Transition starts, its length under Transition ends (level with
+    # A version's name is a heading; Rename opens a box. Typing renames the option below at once,
+    # Escape puts the old name back, and Enter keeps the new one.
+    assert run_js(dlg, "$$('.version')[4].querySelector('.vname').textContent") == "Midnight"
+    # Real key presses: Escape in the box is the box's, and doesn't go on to close the window.
+    from aqt.qt import Qt
+    from PyQt6.QtTest import QTest
+    name_box = "$$('.version')[3].querySelector('input.label')"
+    for finish, label in ((Qt.Key.Key_Escape, "Night"), (Qt.Key.Key_Return, "Late night")):
+        run_js(dlg, "$$('.version .vname')[3].click()")
+        until(app, lambda: run_js(dlg, f"document.activeElement === {name_box}"), 5, "Rename didn't open the name box")
+        run_js(dlg, f"const n = {name_box}; n.value = 'Late night'; n.dispatchEvent(new Event('input'))")
+        assert run_js(dlg, f"{starts}.selectedOptions[0].textContent") == "After Late night's transition ends"
+        dlg.activateWindow()
+        QTest.keyClick(dlg.kiso_web.focusProxy() or dlg.kiso_web, finish)
+        until(app, lambda: run_js(dlg, f"!{name_box}"), 5, f"{label}: the name box stayed open")
+        pump(app, 0.3)
+        assert dlg.isVisible() and run_js(dlg, "!$('#modal').firstChild"), "Escape went on to the window"
+        assert run_js(dlg, "$$('.version .vname')[3].textContent") == label, label
+        assert run_js(dlg, f"{day_scene}.versions[3].label") == label, finish
+        assert run_js(dlg, f"{starts}.selectedOptions[0].textContent") == f"After {label}'s transition ends"
+    run_js(dlg, f"{day_scene}.versions[3].label = 'Night'; changed(true)")
+    # Its rule and delay under Transition starts, its duration under Transition ends (level with
     # the rule), and today's time under each.
     lines = run_js(dlg, """(() => { const v = $$('.version')[4], r = (s) => v.querySelector(s).getBoundingClientRect();
-        return { rule: r('.c-start select').top, wait: r('.c-start .wait input').top, length: r('.c-end input').top,
+        return { rule: r('.c-start select').top, wait: r('.c-start .wait input').top, length: r('.c-end .length').top,
                  start: r('.when-start').top, end: r('.when-end').top }; })()""")
     assert lines["wait"] > lines["rule"] and lines["start"] > lines["wait"], lines
     assert abs(lines["length"] - lines["rule"]) < 4 and lines["end"] > lines["length"], lines
@@ -257,7 +278,12 @@ def check(app, shots, base):
     run_js(dlg, "$('main').scrollTop = 0")
     run_js(dlg, "$$('.version')[4].querySelector('[aria-label=\"Remove version\"]').click()")
     until(app, lambda: run_js(dlg, "$$('.version').length") == 4, 5)
-    print("PASS: a new version starts as the one above is fully in, plus a wait, with no time to set.")
+    # The times run on through the cycle: one past midnight after the evening is the next day's.
+    assert run_js(dlg, "cycleTimes([{ index: 1, start: 1159, fade: 11 }, { index: 0, start: 369, fade: 47 }, "
+                       "{ index: 2, start: 44, fade: 90 }])") == [[0, 369, 416], [1, 1159, 1170], [2, 1484, 1574]]
+    assert run_js(dlg, "[dayAndTime(1170), dayAndTime(1484)]") == ["Today, 19:30", "Next day, 00:44"]
+    print("PASS: a new version starts after the one above's transition, plus a delay, with no time to set; "
+          "its name is a heading to rename.")
 
     # A height that isn't a named moment (from an older version) stays, with its time today under it.
     run_js(dlg, f"Object.assign({day_scene}.versions[1], {{ direction: 'rising', from: 15 }}); changed(true)")
@@ -268,7 +294,7 @@ def check(app, shots, base):
     run_js(dlg, f"Object.assign({day_scene}.versions[1], {{ from: 6 }}); changed(true)")
 
     # A narrow window: each version takes two lines, so its dropdowns keep their width.
-    row = """(() => { const v = $$('.version')[0], name = v.querySelector('input.label').getBoundingClientRect();
+    row = """(() => { const v = $$('.version')[0], name = v.querySelector('.vname').getBoundingClientRect();
         const sel = [...v.querySelectorAll('select')].map(s => s.getBoundingClientRect());
         return { twoLines: sel[0].top >= name.bottom, widths: sel.map(r => Math.round(r.width)),
                  overflow: Math.max(...$$('.versions *').map(e => e.getBoundingClientRect().right))
@@ -278,10 +304,24 @@ def check(app, shots, base):
     narrow = run_js(dlg, row)
     assert min(narrow["widths"]) >= 170 and narrow["overflow"] <= 0, narrow
     shoot(dlg, "versions-narrow")
+    # Scrolled down, the list of scenes stays at the top, over the editor (the New scene buttons go).
+    run_js(dlg, "$('main').scrollTop = $('main').scrollHeight")
+    pump(app, 0.3)
+    assert run_js(dlg, """(() => { const m = $('main').getBoundingClientRect(), l = $('.scene-list').getBoundingClientRect(),
+        b = $('[aria-current=true].scene-item').getBoundingClientRect();
+        return $('main').scrollTop > 0 && l.top >= m.top - 1 && l.top <= m.top + 1
+               && document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2).closest('.scene-item') !== null; })()"""), \
+        "the scene list scrolled away in a narrow window"
+    run_js(dlg, "$('main').scrollTop = 0")
+    # Two lines until a row's dropdowns have room for the longer rules ("After Night's transition ends").
     dlg.resize(1100, 780)
+    until(app, lambda: run_js(dlg, row)["twoLines"], 5, "versions squeeze onto one line")
+    dlg.resize(1300, 780)
     until(app, lambda: not run_js(dlg, row)["twoLines"], 5, "versions stay on two lines in a wide window")
-    assert run_js(dlg, row)["overflow"] <= 0
-    print("PASS: in a narrow window each version takes two lines, and its dropdowns keep their width.")
+    wide = run_js(dlg, row)
+    assert min(wide["widths"]) >= 205 and wide["overflow"] <= 0, wide
+    dlg.resize(1100, 780)
+    print("PASS: each version takes two lines until its dropdowns have room on one, and they keep their width.")
 
     # The preview keeps the shape of Anki's main window however wide the dialog is.
     shape = """(() => { const r = $('.preview').getBoundingClientRect();
@@ -366,12 +406,49 @@ def check(app, shots, base):
     shoot(dlg, "screens-saved")
     # A deck-list screen only switches backdrops on; the Backdrops page sets them up, with a preview.
     assert run_js(dlg, "$$('[data-card=main] input[type=range]').length") == 2, "backdrop sliders on a screen's card"
+    # Every card's controls start in one column, whatever indents them (at both widths).
+    run_js(dlg, "draft.screens.done.enabled = true; changed(true)")
+    dim_x = "$$('input[aria-label=Dim]').map(e => Math.round(e.getBoundingClientRect().left))"
+    size = (dlg.width(), dlg.height())
+    for width in (1100, 800):
+        dlg.resize(width, 780)
+        pump(app, 0.4)
+        xs = run_js(dlg, dim_x)
+        assert len(xs) == 3 and len(set(xs)) == 1, (width, xs)
+    dlg.resize(*size)
+    run_js(dlg, "draft.screens.done.enabled = false; changed(true)")
+    assert run_js(dlg, "$('[data-card=main] .backdrop-switch .link').disabled"), "Configure works with backdrops off"
     run_js(dlg, "$('[data-card=main] .backdrop-switch input').click()")
     assert run_js(dlg, "draft.screens.main.backdrops === true")
     run_js(dlg, "$('[data-card=main] .backdrop-switch .link').click()")
-    until(app, lambda: run_js(dlg, "page") == "backdrops", 5, "Set them up didn't open the Backdrops page")
+    until(app, lambda: run_js(dlg, "page") == "backdrops", 5, "Configure didn't open the Backdrops page")
     until(app, lambda: run_js(dlg, "$$('.backdrop-mock .keshiki-layer').length") > 0, 10, "the backdrop preview has no picture")
-    assert run_js(dlg, "$('.backdrop-preview .help').textContent") == "In use on the deck list."
+    # By the heading: which screens use backdrops, and a way to them.
+    assert run_js(dlg, "$('.page-status').textContent") == "In use on: Deck listManage screens"
+    # A preview about 240px high, kept in view while the cards scroll under it.
+    height = run_js(dlg, "$('.backdrop-mock').getBoundingClientRect().height")
+    assert 220 <= height <= 260, height
+    run_js(dlg, "$('main').scrollTop = $('main').scrollHeight")
+    pump(app, 0.3)
+    assert run_js(dlg, """(() => { const m = $('main').getBoundingClientRect(), p = $('.backdrop-preview').getBoundingClientRect();
+        return $('main').scrollTop > 0 && Math.abs(p.top - m.top) <= 1
+               && $('select.text-outline').getBoundingClientRect().top > p.bottom; })()"""), "the preview scrolled away"
+    # Sliders line up across the cards, those under a checkbox included.
+    xs = run_js(dlg, "$$('.aligned input[type=range]').map(e => Math.round(e.getBoundingClientRect().left))")
+    assert len(xs) == 6 and len(set(xs)) == 1, xs
+    # A card marks its part of the preview while focus is in it.
+    run_js(dlg, "$$('.aligned input[type=range]')[0].focus()")
+    until(app, lambda: run_js(dlg, "$('.backdrop-mock').classList.contains('mark-table')"), 5, "the deck list panel isn't marked")
+    run_js(dlg, "$$('.aligned input[type=range]')[2].focus()")
+    until(app, lambda: run_js(dlg, "$('.backdrop-mock').className.includes('mark-addon') "
+                                   "&& !$('.backdrop-mock').className.includes('mark-table')"), 5, "the statistics panel isn't marked")
+    # The color picker shows only for a custom color.
+    run_js(dlg, "draft.backdrops.panel.enabled = true; changed(true)")
+    assert run_js(dlg, "$('.color-choice input[type=color]').hidden")
+    run_js(dlg, "setv($('.color-choice select'), 'custom')")
+    until(app, lambda: run_js(dlg, "!$('.color-choice input[type=color]').hidden"), 5, "no picker for a custom color")
+    assert run_js(dlg, "$('#restorePage').textContent") == "Reset backdrop settings"
+    run_js(dlg, "$('main').scrollTop = 0")
     # The preview runs the same text help as Anki's window.
     run_js(dlg, "setv($('select.text-outline'), 'everywhere')")
     until(app, lambda: run_js(dlg, "$$('.backdrop-mock .mock-table [style*=\"text-shadow\"], .backdrop-mock .mock-table[style*=\"text-shadow\"]').length"
@@ -562,6 +639,15 @@ def check(app, shots, base):
     shoot(dlg, "library")
     run_js(dlg, "$('#trashUnused').click()")
     until(app, lambda: run_js(dlg, "trashed.length") == len(unused), 5, "the unused pictures didn't go to the trash")
+    # Nothing unused: no Move button, and the note says so.
+    assert run_js(dlg, "!$('#trashUnused') && $('.library-dialog .foot-note').textContent") \
+        == f"All {run_js(dlg, 'images.length')} pictures are used by scenes."
+    assert run_js(dlg, "$('.library-dialog h2').textContent") == "Picture library"
+    # The library is imported pictures only: with a linked folder's album, it says so.
+    assert run_js(dlg, "$('.library-scope').hidden")
+    run_js(dlg, "draft.scenes[0].folder = { path: 'x' }; $('#tab-library').click()")
+    assert run_js(dlg, "!$('.library-scope').hidden && getComputedStyle($('.library-scope')).display !== 'none'")
+    run_js(dlg, "delete draft.scenes[0].folder; $('#tab-library').click()")
     assert not (lib.IMAGES / "spare1.png").exists() and (lib.TRASH / "spare1.png").exists()
     assert run_js(dlg, "$('#tab-trash').textContent") == f"Trash · {len(unused)}"
     run_js(dlg, "$('#tab-trash').click()")
@@ -573,6 +659,12 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "!!$('#confirmYes')"), 5, "Empty trash didn't ask")
     run_js(dlg, "$('#confirmYes').click()")
     until(app, lambda: run_js(dlg, "trashed.length") == 0, 5, "the trash didn't empty")
+    # Empty: a note in the middle, and only Done (at its usual place).
+    assert run_js(dlg, "!$('#restoreAll') && !$('#emptyTrash') && $('.empty-note').textContent") == "The trash is empty."
+    assert run_js(dlg, """(() => { const n = $('.empty-note').getBoundingClientRect(), b = $('.library-body').getBoundingClientRect(),
+        d = $('.library-dialog .dialog-foot .primary').getBoundingClientRect(), f = $('.library-dialog').getBoundingClientRect();
+        return Math.abs((n.left + n.right) - (b.left + b.right)) < 4 && Math.abs((n.top + n.bottom) - (b.top + b.bottom)) < 4
+               && f.right - d.right < 30; })()"""), "the empty trash note isn't centred, or Done moved"
     assert not (lib.TRASH / "spare2.png").exists() and (lib.IMAGES / "spare1.png").exists()
     run_js(dlg, "$('.library-dialog .dialog-foot .primary').click(); byText('#nav button', 'Screens').click()")
     print("PASS: unused pictures go to the trash, come back from it, or are deleted for good after asking.")
@@ -623,10 +715,11 @@ def check(app, shots, base):
     shoot(dlg, "day-change")
     run_js(dlg, "$('#changeLocation').click()")
     # Light: a picture in the light at a time picked on today's strip.
-    run_js(dlg, "byText('label', 'Light the pictures by the sun').querySelector('input').click()")
+    run_js(dlg, "byText('label', 'Adjust lighting throughout the day').querySelector('input').click()")
     until(app, lambda: run_js(dlg, "$$('.light-preview .keshiki-layer').length") > 0, 5, "no light preview")
     run_js(dlg, "setv($('.daylight-wrap input'), 1140)")
-    until(app, lambda: run_js(dlg, "$('.light-preview .readout').textContent") == "19:00", 5, "the strip didn't move the preview")
+    until(app, lambda: run_js(dlg, "$('.light-preview .readout').textContent") == "Preview, 19:00", 5,
+          "the strip didn't move the preview")
     # The picked time shows in Anki's window too, until Back to now.
     until(app, lambda: renderer.scene_look is not None, 5, "Anki's window didn't show the picked time")
     assert run_js(dlg, "!$('#lightNow').hidden")
@@ -638,12 +731,27 @@ def check(app, shots, base):
     run_js(dlg, "$('main').scrollTop = $('main').scrollHeight")
     shoot(dlg, "day-light")
     # By default only day cycles are lit, and the preview shows one; every scene can be.
-    assert run_js(dlg, "draft.light.scope === 'day' && byText('label', 'Day cycles only').querySelector('input').checked")
-    run_js(dlg, "byText('label', 'Every scene').querySelector('input').click()")
+    assert run_js(dlg, "draft.light.scope === 'day' && byText('label', 'Day-cycle scenes only').querySelector('input').checked")
+    run_js(dlg, "byText('label', 'All scenes').querySelector('input').click()")
     until(app, lambda: run_js(dlg, "draft.light.scope") == "all", 5)
     until(app, lambda: run_js(dlg, "$$('.light-preview .keshiki-layer').length") > 0, 5, "no light preview for every scene")
-    run_js(dlg, "byText('label', 'Day cycles only').querySelector('input').click()")
-    run_js(dlg, "byText('label', 'Light the pictures by the sun').querySelector('input').click(); $('main').scrollTop = 0")
+    run_js(dlg, "byText('label', 'Day-cycle scenes only').querySelector('input').click()")
+    # The place in short, the whole of it on hover.
+    run_js(dlg, "draft.day.place = 'Somerville, New Jersey, United States'; changed(true)")
+    assert run_js(dlg, "[$('.locate .place').textContent, $('.locate .place').title]") \
+        == ["Near Somerville, New Jersey", "Somerville, New Jersey, United States"]
+    # Narrow, the preview sits above the controls, and the lighting sliders line up with the
+    # crossfade's, end to end.
+    dlg.resize(800, 780)
+    pump(app, 0.5)
+    ends = run_js(dlg, "$$('.day-panel .slider input').map(e => { const r = e.getBoundingClientRect(); "
+                       "return [Math.round(r.left), Math.round(r.right)]; })")
+    assert len(ends) == 3 and len({tuple(e) for e in ends}) == 1, ends
+    assert abs(run_js(dlg, "$('.daylight').getBoundingClientRect().right") - ends[0][1]) <= 2, "the day's strip overhangs the sliders"
+    assert run_js(dlg, "$('.light-preview').getBoundingClientRect().bottom <= $('.light-controls').getBoundingClientRect().top")
+    dlg.resize(1100, 780)
+    pump(app, 0.3)
+    run_js(dlg, "byText('label', 'Adjust lighting throughout the day').querySelector('input').click(); $('main').scrollTop = 0")
     # Leaving the page hands Anki's window back.
     run_js(dlg, "byText('#nav button', 'Screens').click()")
     until(app, lambda: renderer.scene_look is None, 5, "leaving Day & time kept the picked time in Anki's window")
@@ -653,14 +761,17 @@ def check(app, shots, base):
     # Per-page Revert and Restore: only that page changes, and only in the draft.
     assert run_js(dlg, "!!$('#revertPage') && !!byText('#nav button', 'Day & time').querySelector('.dot')")
     run_js(dlg, "$('#revertPage').click()")
-    until(app, lambda: run_js(dlg, "byText('label', 'Set sunrise and sunset').querySelector('input').checked"), 5, "Revert didn't undo the page")
+    until(app, lambda: run_js(dlg, "byText('label', 'Use fixed times').querySelector('input').checked"), 5, "Revert didn't undo the page")
     assert run_js(dlg, "!$('#revertPage') && !byText('#nav button', 'Day & time').querySelector('.dot') && $('#save').disabled")
     run_js(dlg, "byText('#nav button', 'Screens').click()")
     run_js(dlg, "setv($$('input[aria-label=Dim]')[0], '60')")
     until(app, lambda: run_js(dlg, "!!$('#restorePage')"), 5, "no Restore defaults after changing dim")
-    assert run_js(dlg, "$('#restorePage').textContent") == "Reset dim, blur and shuffle"
+    assert run_js(dlg, "$('#restorePage').textContent") == "Reset adjustments"
+    run_js(dlg, "draft.screens.done.enabled = true; changed(true)")
     run_js(dlg, "$('#restorePage').click()")
     until(app, lambda: run_js(dlg, "$$('input[aria-label=Dim]')[0].value") == "15", 5, "Restore didn't reset dim")
+    assert run_js(dlg, "draft.screens.done.enabled && draft.screens.study.enabled"), "Reset turned a screen on or off"
+    run_js(dlg, "draft.screens.done.enabled = false; changed(true)")
     assert run_js(dlg, "$$('.chip').length") == 2, "Restore dropped the chosen scenes"
     assert mw.addonManager.getConfig("keshiki")["screens"]["main"]["dim"] == 15
     run_js(dlg, "byText('#nav button', 'Day & time').click()")
@@ -687,6 +798,47 @@ def check(app, shots, base):
     if shots:
         pump(app, 2.5)
         mw.form.centralwidget.grab().save(str(shots / "main-dark.png"))
+
+    # kiso shots: the settings as Anki shows them, opened the way the Tools menu opens them
+    # (modally), every page from top to bottom and each scene, at the saved size and narrow
+    # (640 px here: the offscreen screen keeps the dialog under 800).
+    # The run leaves the config and the dialog's remembered size as they were.
+    import logging
+
+    from aqt.qt import QImage
+    from keshiki.keshiki._kiso import settings as kiso_settings
+    from keshiki.keshiki._kiso import shots as kiso_shots
+    until(app, lambda: not kiso_settings.open_dialogs, 5)
+    geometry = lambda: {k: bytes(v) for k, v in mw.pm.profile.items() if "keshikiSettings" in k}  # noqa: E731
+    cfg_before, geom_before = mw.addonManager.getConfig("keshiki"), geometry()
+    # Nothing here keeps the run, as in Anki's dev watch (PyQt holds a timer's callback weakly).
+    kiso_shots.start(mw, addon().addon._settings, '{"id": "check", "narrow": 640}', base, logging.getLogger("check"))
+    out = base / "kiso_shots" / "check"
+    until(app, lambda: (out / "done.json").is_file(), 240, "the screenshot run didn't finish")
+    done = json.loads((out / "done.json").read_text())
+    assert not done["errors"], done["errors"]
+    names = done["files"]
+    for tag in ("saved", "640px"):
+        for p in ("screens", "scenes", "backdrops", "day"):
+            assert any(n.startswith(tag) and f"-{p}-" in n for n in names), (tag, p, names)
+        assert any(n.startswith(tag) and "-picture-library" in n for n in names), names
+        assert any(n.startswith(tag) and "-trash" in n for n in names), names
+    scenes = mw.addonManager.getConfig("keshiki")["scenes"]
+    assert all(any(f"-scenes-{kiso_shots.slug(s['name'])}" in n for n in names) for s in scenes), names
+    assert any(n.endswith("-02.png") for n in names), "nothing was scrolled through"
+    assert QImage(str(out / next(n for n in names if n.startswith("640px")))).width() == 640
+    assert not kiso_settings.open_dialogs and mw.addonManager.getConfig("keshiki") == cfg_before
+    assert geometry() == geom_before, "the run changed the dialog's remembered size"
+    # A settings window already open is left alone.
+    dlg = open_page()
+    kiso_shots.start(mw, addon().addon._settings, '{"id": "busy"}', base, logging.getLogger("check"))
+    until(app, lambda: (base / "kiso_shots" / "busy" / "done.json").is_file(), 10)
+    assert "close it first" in json.loads((base / "kiso_shots" / "busy" / "done.json").read_text())["errors"][0]
+    assert dlg.isVisible()
+    dlg.reject()
+    until(app, lambda: not dlg.isVisible(), 5)
+    print(f"PASS: kiso shots grabs every page and scene at both sizes ({len(names)} shots), and leaves "
+          "the config, the window's size and an open settings window alone.")
 
 
 if __name__ == "__main__":

@@ -31,6 +31,7 @@ Object.assign(ICONS, {
   play: "M8 5v14l11-7z",
   backdrops: "M4 5h16v6H4zM6 14h12v5H6zM8 8h5M9 16.5h4",
   pause: "M8 5v14M16 5v14",
+  rename: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4",
 });
 
 const sceneById = (id) => draft.scenes.find((s) => s.id === id);
@@ -114,8 +115,9 @@ function screensPage() {
   }
   const { main, study, done } = draft.screens;
   return [
-    ...pageHead("Screens", "Choose what shows behind the deck list and while you study. "
-      + (inWindow() ? "Edits preview in Anki's main window until you save." : "Edits show in Anki's main window once you save.")),
+    ...pageHead("Screens", "Choose backgrounds for each screen. "
+      + (inWindow() ? "Changes preview in Anki as you make them, until you save."
+                    : "Enable Preview below to see changes in Anki before saving.")),
     screenCard("main", "Deck list", "Your decks, and while Anki starts",
       sceneChooser(main), lookControls(main), backdropSwitch(main)),
     screenCard("study", "Studying", "Overview, reviews and the finished screen",
@@ -127,24 +129,31 @@ function screensPage() {
         !study.same_as_main && sceneChooser(study),
         lookControls(study))),
     // Once every deck is done for today, these scenes take over both screens.
-    screenCard("done", "All done for today", "Once there's nothing left to study in any deck",
+    screenCard("done", "All done for today", "Use these scenes on all screens when no cards remain.",
       check(done.enabled, "Switch to these scenes when everything's done", (on) => { done.enabled = on; }),
       dependent(done.enabled,
         sceneChooser(done),
         lookControls(done),
         backdropSwitch(done),
-        h("p", { className: "help" }, "For the deck list and studying alike. A new day, with new cards due, switches back."))),
+        h("p", { className: "help" }, "Your usual scenes return when new cards become due."))),
   ];
 }
 
-// A deck-list screen uses the Backdrops page's settings, or Anki's own look.
+// A deck-list screen uses the Backdrops page's settings, or Anki's own look. Configure leads
+// there while they're on (the page is in the sidebar either way).
 function backdropSwitch(screen) {
+  const configure = h("button", { type: "button", className: "link", disabled: !screen.backdrops,
+                                  title: "Set up backdrops on the Backdrops page",
+                                  onclick: () => { page = "backdrops"; render(); } }, "Configure...");
   return h("div", { className: "field backdrop-switch" }, h("span", { className: "label" }, "Backdrops"),
-    h("div", {},
+    h("div", { className: "backdrop-line" },
       h("label", { className: "check" },
-        h("input", { type: "checkbox", checked: !!screen.backdrops,
-                     onchange: (e) => { screen.backdrops = e.target.checked; changed(); } }), "Use backdrops"),
-      h("button", { type: "button", className: "link", onclick: () => { page = "backdrops"; render(); } }, "Set them up...")));
+        h("input", { type: "checkbox", checked: !!screen.backdrops, onchange: (e) => {
+          screen.backdrops = e.target.checked;
+          configure.disabled = !e.target.checked;
+          changed();
+        } }), "Use backdrops"),
+      configure));
 }
 
 // A screen: its preview on the left, what it shows on the right.
@@ -178,9 +187,10 @@ function sceneChooser(screen) {
     if (e.target.value) { screen.scenes.push(e.target.value); changed(true); }
   } }, h("option", { value: "" }, screen.scenes.length ? "Add another..." : "Choose a scene..."),
      options.map((s) => h("option", { value: s.id }, s.name)));
+  // The chosen scenes, then the dropdown for another under them; the label sits at the top.
   return [
-    h("div", { className: "field" }, h("span", { className: "label" }, "Scenes"),
-      h("div", { className: "chips" },
+    h("div", { className: "field scene-field" }, h("span", { className: "label" }, "Scenes"),
+      h("div", { className: "scene-pick" }, screen.scenes.length > 0 && h("div", { className: "chips" },
         screen.scenes.map((id) => {
           const scene = sceneById(id);
           const thumb = sceneThumb(scene);
@@ -190,7 +200,7 @@ function sceneChooser(screen) {
               scene.kind === "album" ? `${scene.name} (${albumPictures(scene).length})` : scene.name),
             h("button", { type: "button", "aria-label": `Remove ${scene.name}`, title: "Remove",
                           onclick: () => { screen.scenes = screen.scenes.filter((x) => x !== id); changed(true); } }, "×"));
-        }),
+        })),
         options.length ? add : null)),
     // A screen's scenes, and each picture of an album, take turns; with one there's nothing to shuffle.
     screenTurns(screen) > 1 && h("div", { className: "field" }, h("label", {}, "Shuffle every"),
@@ -299,9 +309,12 @@ async function askFolder() {
 }
 
 // The picture library: each picture marked in use or not, and the trash, where unused
-// pictures wait to be restored or deleted for good.
+// pictures wait to be restored or deleted for good. Only pictures added to Keshiki: a linked
+// folder's stay where they are, so its album can have more pictures than the library.
 function openLibrary(tab = "library") {
   const tabs = h("div", { className: "tabs", role: "tablist" });
+  const scope = h("p", { className: "help library-scope" },
+    "Imported pictures only. Folder-linked pictures stay in their original folders.");
   const body = h("div", { className: "library-body" });
   const foot = h("div", { className: "dialog-foot" });
   const move = async (op, names) => {
@@ -319,27 +332,33 @@ function openLibrary(tab = "library") {
   const draw = () => {
     tabs.replaceChildren(tabButton("library", `Library · ${images.length}`), tabButton("trash", `Trash · ${trashed.length}`));
     const done = h("button", { type: "button", className: "primary", onclick: closeModal }, "Done");
+    // Nothing to show: a note in the middle. Actions with nothing to act on aren't shown.
+    const empty = (text) => h("p", { className: "help empty-note" }, text);
+    scope.hidden = tab !== "library" || !draft.scenes.some((sc) => sc.folder);
     if (tab === "library") {
       const used = imagesInUse();
       const unused = images.filter((img) => !used.has(img.name));
       body.replaceChildren(images.length
         ? h("div", { className: "grid library-grid" }, images.map((img) => used.has(img.name)
             ? tile(img, "In use") : tile(img, "Unused", "Move to trash", () => move("trash", [img.name]))))
-        : h("p", { className: "help" }, "No pictures yet."));
-      foot.replaceChildren(
-        h("span", { className: "help foot-note" }, unused.length ? `${unused.length} not used by any scene` : "Every picture is in use."),
-        h("button", { type: "button", id: "trashUnused", disabled: !unused.length,
-                      onclick: () => move("trash", unused.map((img) => img.name)) }, `Move ${unused.length} unused to trash`),
-        done);
+        : empty("No pictures yet."));
+      foot.replaceChildren(...[
+        h("span", { className: "help foot-note" }, unused.length ? `${unused.length} not used by any scene`
+          : images.length === 1 ? "The picture is used by a scene."
+          : images.length ? `All ${images.length} pictures are used by scenes.` : ""),
+        unused.length > 0 && h("button", { type: "button", id: "trashUnused",
+                                           onclick: () => move("trash", unused.map((img) => img.name)) },
+          `Move ${unused.length} unused to trash`),
+        done].filter(Boolean));
     } else {
       body.replaceChildren(trashed.length
         ? h("div", { className: "grid library-grid" }, trashed.map((img) => tile(img, null, "Restore", () => move("restore", [img.name]))))
-        : h("p", { className: "help" }, "The trash is empty."));
-      foot.replaceChildren(
+        : empty("The trash is empty."));
+      foot.replaceChildren(...[
         h("span", { className: "help foot-note" }, trashed.length ? "Restored pictures go back to the library." : ""),
-        h("button", { type: "button", id: "restoreAll", disabled: !trashed.length,
-                      onclick: () => move("restore", trashed.map((img) => img.name)) }, "Restore all"),
-        h("button", { type: "button", className: "danger", id: "emptyTrash", disabled: !trashed.length, onclick: async () => {
+        trashed.length > 0 && h("button", { type: "button", id: "restoreAll",
+                                            onclick: () => move("restore", trashed.map((img) => img.name)) }, "Restore all"),
+        trashed.length > 0 && h("button", { type: "button", className: "danger", id: "emptyTrash", onclick: async () => {
           const ok = await confirmDialog({ title: `Delete ${trashed.length} picture${trashed.length === 1 ? "" : "s"} for good?`,
             yes: "Empty trash", danger: true, text: "They're deleted from Keshiki's picture folder and can't be brought back." });
           if (!ok) return;
@@ -347,11 +366,11 @@ function openLibrary(tab = "library") {
           trashed = res.trash;
           draw();
         } }, "Empty trash"),
-        done);
+        done].filter(Boolean));
     }
   };
   openModal(h("div", { className: "dialog library-dialog" },
-    h("div", { className: "dialog-head" }, h("h2", {}, "Pictures"), tabs), body, foot));
+    h("div", { className: "dialog-head" }, h("h2", {}, "Picture library"), tabs), scope, body, foot));
   draw();
 }
 
@@ -506,7 +525,7 @@ function albumGrid(scene, preview) {
     // A linked album only hides a picture (it stays in the folder); another takes it out
     // (it stays in the picture library). Neither deletes anything.
     h("button", { type: "button", className: "icon-only remove" + (folder ? " hide" : ""),
-                  title: folder ? "Hide picture (it stays in the folder)" : "Remove from album (it stays in your pictures)",
+                  title: folder ? "Hide picture" : "Remove from album",
                   "aria-label": `${folder ? "Hide" : "Remove"} ${v.image}`,
                   onclick: () => {
                     if (folder) folder.hidden = [...(folder.hidden || []), v.image];
@@ -563,6 +582,7 @@ function versionTable(scene, preview) {
       ? (scene.versions.length ? { label: "", image: "", anchor: "after", offset: 0, fade: 30 }
         : { label: "", image: "", anchor: "sun", direction: "setting", from: 0, to: -6 })
       : { label: "", image: "", at: Math.min(100, (Number(last.at) || 0) + 10), fade: 10 });
+    renaming = { scene: scene.id, index: scene.versions.length - 1 };
     changed(true);
   } }, "+ Add version"));
   return table;
@@ -625,7 +645,7 @@ function versionRow(scene, v, i, preview) {
   let starts, fade;
   if (scene.kind === "day") {
     const clock = v.anchor === "clock";
-    // "after": starts when the version above is fully in, plus a wait (v.offset); not for the first row.
+    // "after": starts when the version above is fully in, plus a delay (v.offset); not for the first row.
     const above = i > 0 ? scene.versions[i - 1] : null;
     const follows = v.anchor === "after" && !!above;
     const sun = !clock && !follows;
@@ -661,7 +681,7 @@ function versionRow(scene, v, i, preview) {
         h("optgroup", { label: "Evening" }, half("setting").map((m) =>
           momentOption(m, "setting", sun && direction === "setting" && m.degrees === from))),
         sun && moments.length > 0 && !isMoment(direction, from) && customOption(direction, from),
-        above && h("option", { value: "after", selected: follows }, `When ${above.label || "the one above"} is fully in`),
+        above && h("option", { value: "after", selected: follows }, afterLabel(above.label)),
         h("option", { value: "clock", selected: clock }, "At a set time"));
     // No rebuild on the boxes' edits: each keeps its focus, and the times redraw on their own.
     const minutes = (key, label, set) => h("input", { type: "number", min: 0, max: 720, value: v[key] || 0, "aria-label": label,
@@ -674,9 +694,11 @@ function versionRow(scene, v, i, preview) {
           v.offset = hh * 60 + mm;
           changed();
         } })),
-      follows && h("span", { className: "unit wait" }, "then wait", minutes("offset", "Minutes to wait", (n) => { v.offset = n; }), "min"));
+      follows && h("span", { className: "unit labelled wait" }, "Delay",
+        h("span", { className: "unit" }, minutes("offset", "Delay in minutes", (n) => { v.offset = n; }), "min")));
     fade = cell("Transition ends", "when-end", clock || follows
-      ? h("span", { className: "unit length" }, "after", minutes("fade", "Minutes until fully in", (n) => { v.fade = n; }), "min")
+      ? h("span", { className: "unit labelled length" }, "Transition duration",
+          h("span", { className: "unit" }, minutes("fade", "Transition duration in minutes", (n) => { v.fade = n; }), "min"))
       : h("select", { "aria-label": "Transition ends", onchange: (e) => { v.to = Number(e.target.value.split(":")[1]); changed(true); } },
           half(direction).filter(after).map((m) => momentOption(m, direction, m.degrees === to)),
           moments.length > 0 && !isMoment(direction, to) && customOption(direction, to)));
@@ -693,16 +715,52 @@ function versionRow(scene, v, i, preview) {
                       updateScenePreview(preview, false);
                     } },
     pickButton(v, scene, i),
-    h("input", { type: "text", className: "label", value: v.label, placeholder: "Name", "aria-label": "Version name",
-                 oninput: (e) => {
-                   v.label = e.target.value;
-                   // The row below may start "When <this> is fully in": keep its name current.
-                   const next = document.querySelector(`.version[data-index="${i + 1}"] option[value="after"]`);
-                   if (next) next.textContent = `When ${v.label || "the one above"} is fully in`;
-                 }, onchange: () => changed() }),
+    versionName(scene, v, i),
     starts, fade,
     h("button", { type: "button", className: "icon-only c-remove", title: "Remove version", "aria-label": "Remove version",
                   onclick: () => { scene.versions.splice(i, 1); changed(true); } }, icon("close")));
+}
+
+// A version's name, as a heading: Rename (or a click on it) turns it into a box, and Enter or
+// leaving the box keeps the name (Escape, the old one). In place, without a rebuild, so a click
+// elsewhere still lands. A new version opens with its box.
+let renaming = null;   // {scene, index}: the version whose name is being edited
+const afterLabel = (label) => (label ? `After ${label}${label.endsWith("s") ? "'" : "'s"} transition ends`
+                                     : "After the previous transition ends");
+function versionName(scene, v, i) {
+  if (!(renaming && renaming.scene === scene.id && renaming.index === i)) {
+    return h("button", { type: "button", className: "vname", title: "Rename", "aria-label": `Rename ${v.label || "version"}`,
+                         onclick: (e) => {
+                           renaming = { scene: scene.id, index: i };
+                           e.currentTarget.replaceWith(versionName(scene, v, i));
+                         } },
+      h("span", { className: "vname-text" + (v.label ? "" : " unnamed") }, v.label || "Unnamed"), icon("rename"));
+  }
+  const was = v.label;
+  // The row below may start "After <this>'s transition ends": its name follows as it's typed.
+  const follow = () => {
+    const next = document.querySelector(`.version[data-index="${i + 1}"] option[value="after"]`);
+    if (next) next.textContent = afterLabel(v.label);
+  };
+  // A rebuild while renaming makes a new box (renaming.input): the old one, gone, keeps out of it.
+  const finish = (keep) => {
+    if (!renaming || renaming.input !== input) return;
+    renaming = null;
+    v.label = keep ? input.value.trim() : was;
+    follow();
+    if (input.isConnected) input.replaceWith(versionName(scene, v, i));
+    if (v.label !== was) changed();
+  };
+  const input = h("input", { type: "text", className: "label", value: v.label, placeholder: "Name", "aria-label": "Version name",
+                             oninput: () => { v.label = input.value.trim(); follow(); },
+                             onkeydown: (e) => {
+                               if (e.key === "Enter") { e.preventDefault(); finish(true); }
+                               else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
+                             },
+                             onblur: () => finish(true) });
+  renaming.input = input;
+  requestAnimationFrame(() => { if (input.isConnected) { input.focus(); input.select(); } });
+  return input;
 }
 
 // One of a version's two cells: its controls, stacked, and the time they make today (filled
@@ -836,6 +894,20 @@ function drawRibbon(wrap, res, scene) {
     h("span", { className: cls || "", style: { left: pct(at) + "%" } }, text)));
 }
 
+// A day cycle's times in its order, from its first version's start today: each version
+// starts at the first such time after the one above's start, so the times run on past midnight
+// (minutes from today's midnight; 1440 and on is the next day). [[index, start, end]].
+function cycleTimes(marks) {
+  let last = null;
+  return marks.slice().sort((a, b) => a.index - b.index).map((m) => {
+    let start = ((m.start % 1440) + 1440) % 1440;
+    if (last !== null) while (start < last) start += 1440;
+    last = start;
+    return [m.index, start, start + m.fade];
+  });
+}
+const dayAndTime = (minutes) => `${minutes >= 1440 ? "Next day" : "Today"}, ${hhmm(minutes)}`;
+
 function currentPosition(scene) {
   if (scrub !== null) return scrub;
   if (scene.kind === "progress") return Math.round(S.percent);
@@ -854,8 +926,8 @@ function updateScenePreview(preview, redrawRibbon) {
     wrap.querySelector("input").value = position;
   }
   const readout = preview.querySelector(".readout");
-  readout.textContent = scene.kind === "day" ? (scrub === null ? "Now, " : "") + hhmm(position)
-    : scene.kind === "progress" ? (position >= 100 ? "Finished" : `${Math.round(position)}% done`) : "";
+  readout.textContent = (scrub === null ? "Now, " : "Preview, ") + (scene.kind === "day" ? hhmm(position)
+    : position >= 100 ? "finished" : `${Math.round(position)}% done`);
   readout.hidden = !timed(scene);
   const back = document.getElementById("backToNow");
   if (back) back.hidden = scrub === null;
@@ -872,11 +944,13 @@ function updateScenePreview(preview, redrawRibbon) {
     S.marks = res.marks;
     stageFor(preview).apply({ layers: res.layers, light: res.light, dim: 0, blur: 0, fade: redrawRibbon ? 300 : ease },
                             !redrawRibbon && !ease);
-    for (const m of res.marks) {
-      const row = document.querySelector(`.version[data-index="${m.index}"]`);
-      if (!row || scene.kind !== "day") continue;
-      row.querySelector(".when-start").textContent = `Today, ${hhmm(m.start)}`;
-      row.querySelector(".when-end").textContent = `Today, ${hhmm(m.start + m.fade)}`;
+    if (scene.kind === "day") {
+      for (const [index, start, end] of cycleTimes(res.marks)) {
+        const row = document.querySelector(`.version[data-index="${index}"]`);
+        if (!row) continue;
+        row.querySelector(".when-start").textContent = dayAndTime(start);
+        row.querySelector(".when-end").textContent = dayAndTime(end);
+      }
     }
     if (wrap && redrawRibbon) drawRibbon(wrap, res, scene);
     // Highlight the version on top right now.
@@ -1046,12 +1120,14 @@ function pickImage(current, use, scene = null, index = -1, { positionOnly = fals
 
 // -- Backdrops page ---------------------------------------------------------
 
-// How the deck list stands off the picture, on the screens that use backdrops: the deck
-// table's panel, a panel behind other add-ons' content, and an outline on that content's text.
-// The preview is the deck list's scene with a stand-in for those add-ons.
+// How the deck list stands off the picture, on the screens that use backdrops: the panel
+// behind the decks, a panel behind the statistics under it, and outlines on the text.
+// The preview is the deck list's scene with a stand-in for the statistics; it stays in view
+// while the cards scroll, and the card under the pointer (or focus) marks its part of it.
 function backdropsPage() {
   const b = draft.backdrops;
-  const using = ["main", "done"].filter((k) => draft.screens[k].backdrops).map((k) => (k === "main" ? "the deck list" : "All done"));
+  const using = ["main", "done"].filter((k) => draft.screens[k].backdrops)
+    .map((k) => (k === "main" ? "Deck list" : "All done for today"));
   const preview = mock("main");
   preview.classList.add("backdrop-mock");
   preview.append(h("div", { className: "mock-addon" },
@@ -1059,62 +1135,74 @@ function backdropsPage() {
     h("div", { className: "mock-stats" }, [["Past week", "9.4 hrs"], ["Total", "807 hrs"], ["Streak", "869 days"]]
       .map(([k, v]) => h("span", {}, k, h("b", {}, v)))),
     h("div", { className: "mock-heat" }, Array.from({ length: 52 }, (_, i) => h("i", { style: { opacity: String(0.35 + ((i * 37) % 13) / 20) } })))));
+  const card = (target, title, sub, ...kids) => previewTarget(h("section", { className: "panel aligned" },
+    h("div", { className: "panel-head" }, h("h2", {}, title), h("span", { className: "help" }, sub)), kids), target);
   return [
-    ...pageHead("Backdrops", "Keep the deck list readable over any picture. Each screen turns them on with its Backdrops switch."),
-    h("section", { className: "panel backdrop-preview" },
-      preview,
-      h("p", { className: using.length ? "help" : "help warn" }, using.length
-        ? `In use on ${using.join(" and ")}.`
-        : "No screen uses backdrops yet: turn on \"Use backdrops\" on the Screens page.")),
-    h("section", { className: "panel" },
-      h("div", { className: "panel-head" }, h("h2", {}, "Deck table"), h("span", { className: "help" }, "Anki's own panel around your decks")),
+    ...pageHead("Backdrops", "Adjust the panels and text outlines that keep your deck list readable over backgrounds."),
+    h("p", { className: "page-status" + (using.length ? " on" : "") },
+      h("span", { className: "status-dot" }),
+      using.length ? `In use on: ${using.join(", ")}` : "Not in use on any screen",
+      h("button", { type: "button", className: "link", id: "manageScreens", title: "Each screen turns backdrops on with Use backdrops",
+                    onclick: () => { page = "screens"; render(); } }, "Manage screens")),
+    h("section", { className: "panel backdrop-preview" }, preview),
+    card("table", "Deck list panel", "The panel behind your decks",
       slider("Opacity", b.table.opacity, 0, 90, "%", (v) => { b.table.opacity = v; }),
-      slider("Frost", b.table.frost, 0, 20, "px", (v) => { b.table.frost = v; }),
-      h("div", { className: "field" }, h("span"),
-        help("40% is Anki's own. Frost blurs the picture behind the panel, so busy detail doesn't run through the text."))),
-    h("section", { className: "panel" },
-      h("div", { className: "panel-head" }, h("h2", {}, "Other add-ons' content"),
-        h("span", { className: "help" }, "Review Heatmap, Study Time Stats, the \"Studied N cards\" line")),
-      check(b.panel.enabled, "A panel behind it, in the deck table's style", (on) => { b.panel.enabled = on; }),
+      slider("Background blur", b.table.frost, 0, 20, "px", (v) => { b.table.frost = v; }),
+      note(help("Anki's default opacity is 40%. Background blur softens the image behind the panel."))),
+    card("addon", "Statistics panel", "Anki's \"Studied N cards\" line, Review Heatmap, Study Time Stats",
+      check(b.panel.enabled, "Show a panel behind statistics", (on) => { b.panel.enabled = on; }),
       dependent(b.panel.enabled,
         slider("Opacity", b.panel.opacity, 0, 90, "%", (v) => { b.panel.opacity = v; }),
-        slider("Frost", b.panel.frost, 0, 20, "px", (v) => { b.panel.frost = v; }),
+        slider("Background blur", b.panel.frost, 0, 20, "px", (v) => { b.panel.frost = v; }),
         slider("Padding", b.panel.padding, 0, 40, "px", (v) => { b.panel.padding = v; }),
-        colorField("Colour", b.panel, "color", "--canvas-elevated"),
-        h("div", { className: "field" }, h("span"),
-          help("It fits around what they show under the deck table and follows it as the page changes.")))),
-    h("section", { className: "panel" },
-      h("div", { className: "panel-head" }, h("h2", {}, "Text on the picture"),
-        h("span", { className: "help" }, "Everything on the deck list, the deck table included")),
-      h("div", { className: "field" }, h("label", {}, "Outline"),
+        colorField("Color source", b.panel, "color", "--canvas-elevated"),
+        note(help("It fits around the statistics, and follows them as the page changes.")))),
+    card("text", "Text readability", "Applies to all deck-list text, including text inside panels.",
+      h("div", { className: "field" }, h("label", {}, "Text outline"),
         h("select", { className: "text-outline", onchange: (e) => { b.text.outline = e.target.value; changed(true); } },
           [["off", "Off"], ["needed", "Where needed"], ["everywhere", "Everywhere"]].map(([v, label]) =>
             h("option", { value: v, selected: b.text.outline === v }, label)))),
       dependent(b.text.outline !== "off",
         slider("Strength", b.text.strength, 0, 100, "%", (v) => { b.text.strength = v; })),
-      h("div", { className: "field" }, h("span"),
-        help("Where needed helps only text the picture makes hard to read; everywhere outlines all of it, and more "
-          + "where needed. The outline is always the text's opposite: dark behind light text.",
-          "Keshiki works out the colour behind each piece of text from the picture it draws, with the panel it's on, "
-          + "and compares the two as WCAG contrast ratios do (4.5:1 reads well). Text short of that is helped as much "
-          + "as it's short: coloured text first moves a little lighter (darker in a light theme) and its hue a touch "
-          + "away from the picture's, then an outline makes up the rest. Anki's faint zero counts stay faint. It's "
-          + "measured again when the scene, the page or the window changes."))),
+      note(help("Automatically adds an outline where the background reduces contrast.",
+        "Where needed outlines only text the background makes hard to read. Everywhere outlines all of it, and "
+        + "more where needed. The outline is always the text's opposite: dark behind light text. Keshiki works out "
+        + "the color behind each piece of text from the picture it draws, with the panel it's on, and compares the "
+        + "two as WCAG contrast ratios do (4.5:1 reads well). Text short of that is helped as much as it's short: "
+        + "colored text first moves a little lighter (darker in a light theme) and its hue a touch away from the "
+        + "picture's, then an outline makes up the rest. Anki's faint zero counts stay faint. It's measured again "
+        + "when the scene, the page or the window changes."))),
   ];
 }
 
-// A colour: the window's (theme), or one picked.
+// Help under a card's controls, in the controls' column.
+const note = (...kids) => h("div", { className: "field" }, h("span"), h("div", {}, kids));
+
+// A card that marks its part of the backdrop preview (the deck list panel, the statistics
+// panel, the text) while the pointer is over it or focus is in it.
+function previewTarget(section, target) {
+  const update = () => {
+    const box = document.querySelector(".backdrop-mock");
+    if (box) box.classList.toggle(`mark-${target}`, section.isConnected
+      && (section.matches(":hover") || section.contains(document.activeElement)));
+  };
+  // After the event, so focus has moved.
+  for (const type of ["mouseenter", "mouseleave", "focusin", "focusout"]) section.addEventListener(type, () => setTimeout(update));
+  return section;
+}
+
+// A color: the window's (theme), or one picked; the picker shows only for a custom one.
 function colorField(label, obj, key, themeVar) {
   const theme = getComputedStyle(document.documentElement).getPropertyValue(themeVar).trim();
   const custom = !!obj[key];
   const picker = h("input", { type: "color", value: obj[key] || (/^#[0-9a-f]{6}$/i.test(theme) ? theme : "#2c2c2c"),
-                              disabled: !custom, "aria-label": `${label}, custom`,
+                              hidden: !custom, "aria-label": "Custom color",
                               oninput: (e) => { obj[key] = e.target.value; changed(); } });
-  return h("div", { className: "field" }, h("span", { className: "label" }, label),
+  return h("div", { className: "field" }, h("label", {}, label),
     h("div", { className: "color-choice" },
       h("select", { "aria-label": label, onchange: (e) => { obj[key] = e.target.value === "custom" ? picker.value : ""; changed(true); } },
-        h("option", { value: "", selected: !custom }, "Window colour"),
-        h("option", { value: "custom", selected: custom }, "Custom")),
+        h("option", { value: "", selected: !custom }, "Window color"),
+        h("option", { value: "custom", selected: custom }, "Custom color")),
       picker));
 }
 
@@ -1184,46 +1272,51 @@ function dayPage() {
                  onchange: (e) => { day[key] = e.target.value; changed(); } }));
   const findButton = (text, primary) => h("button", { type: "button", id: "locate", className: primary ? "primary" : "",
                                                       disabled: locating, onclick: locate }, text);
-  const note = (...kids) => h("div", { className: "field" }, h("span"), h("div", {}, kids));
+  // The place, short (town and region), with the whole name on hover.
+  const place = day.place ? day.place.split(",").map((part) => part.trim()).slice(0, 2).join(", ") : "";
   return [
-    ...pageHead("Day & time", "Day-cycle scenes follow the sun through the day: the real sun where you are, or a day you set."),
-    h("section", { className: "panel" },
+    ...pageHead("Day & time", "Set the daily timing used by day-cycle scenes and lighting effects."),
+    // Each choice's settings under it, indented alike.
+    h("section", { className: "panel aligned day-panel" },
       h("h2", {}, "Sunrise and sunset"),
       h("div", { className: "choices" },
-        radio("daysource", !loc, "Set sunrise and sunset", () => { day.source = "manual"; changed(true); }),
-        radio("daysource", loc, "Use my location", () => { day.source = "location"; changed(true); })),
-      loc
-        ? [h("div", { className: "field" }, h("span", { className: "label" }, "Location"),
-             h("div", { className: "locate" },
-               h("span", { className: "place" }, locating ? "Finding your location..." : day.place ? `Near ${day.place}`
-                 : known ? `${day.latitude}, ${day.longitude}` : "Not set yet"),
-               known
-                 ? h("button", { type: "button", id: "changeLocation", "aria-expanded": String(editing),
-                                 onclick: () => { editLocation = !editLocation; render(); } }, editLocation ? "Done" : "Change")
-                 : findButton("Find my location", true))),
-           locateError && note(h("div", { className: "error" }, locateError)),
-           known && h("div", { className: "field" }, h("span", { className: "label" }, "Today"), today),
-           editing && h("div", { className: "location-edit" },
-             known && note(findButton("Find again", false)),
-             note(help("Find my location asks for a rough position, only when you click it.",
-               "It looks up your internet address at ipapi.co. You can also type coordinates from any map app: "
-               + "north and east are positive.")),
-             coord("latitude", "Latitude", 90), coord("longitude", "Longitude", 180),
-             time("sunrise", "Fallback sunrise"), time("sunset", "Fallback sunset"),
-             note(help("For days the sun doesn't rise or set here.")))]
-        : [time("sunrise", "Sunrise"), time("sunset", "Sunset"),
-           note(help("Make these your own day: if your morning starts at 9, set sunrise to 09:00."))]),
+        radio("daysource", !loc, "Use fixed times", () => { day.source = "manual"; changed(true); }),
+        !loc && h("div", { className: "option-body" },
+          time("sunrise", "Sunrise"), time("sunset", "Sunset"),
+          note(help("Make these your own day: if your morning starts at 9, set sunrise to 09:00."))),
+        radio("daysource", loc, "Use my location", () => { day.source = "location"; changed(true); }),
+        loc && h("div", { className: "option-body" },
+          h("div", { className: "field" }, h("span", { className: "label" }, "Location"),
+            h("div", { className: "locate" },
+              h("span", { className: "place", title: day.place || "" }, locating ? "Finding your location..." : place ? `Near ${place}`
+                : known ? `${day.latitude}, ${day.longitude}` : "Not set yet"),
+              known
+                ? h("button", { type: "button", id: "changeLocation", "aria-expanded": String(editing),
+                                onclick: () => { editLocation = !editLocation; render(); } }, editLocation ? "Done" : "Change")
+                : findButton("Find my location", true))),
+          locateError && note(h("div", { className: "error" }, locateError)),
+          known && h("div", { className: "field" }, h("span", { className: "label" }, "Today"), today),
+          editing && h("div", { className: "location-edit" },
+            known && note(findButton("Find again", false)),
+            note(help("Find my location asks for a rough position, only when you click it.",
+              "It looks up your internet address at ipapi.co. You can also type coordinates from any map app: "
+              + "north and east are positive.")),
+            coord("latitude", "Latitude", 90), coord("longitude", "Longitude", 180),
+            time("sunrise", "Fallback sunrise"), time("sunset", "Fallback sunset"),
+            note(help("For days the sun doesn't rise or set here.")))))),
     lightPanel(),
-    h("section", { className: "panel" },
+    h("section", { className: "panel aligned day-panel" },
       h("h2", {}, "Transitions"),
-      slider("Crossfade", draft.transition_seconds, 0, 10, " s", (v) => { draft.transition_seconds = v; }),
-      note(help("How long the background takes to change: switching screens, or a shuffle's next scene."))),
+      slider("Crossfade duration", draft.transition_seconds, 0, 10, " s", (v) => { draft.transition_seconds = v; }),
+      note(help("Blend between backgrounds when switching screens or shuffling scenes.",
+        "Also when a scene or its settings change. A day-cycle scene moves between its versions at its own pace "
+        + "instead: the transition times set for each version on the Scenes page."))),
   ];
 }
 
-// Light: lighting the pictures by the sun, with a strength and a bloom. A small preview shows
-// one of your pictures in that light at a time chosen along today's strip (now, to start);
-// a chosen time shows in Anki's window too, until Back to now or leaving the page.
+// Daily lighting: lighting the pictures by the sun, with a strength and a bloom. A small
+// preview shows one of your pictures in that light at a time picked on the day's strip (now,
+// to start); a picked time shows in Anki's window too, until Back to now or leaving the page.
 let lightAt = null;
 
 function lightPanel() {
@@ -1232,9 +1325,20 @@ function lightPanel() {
   const ticks = h("div", { className: "ticks" });
   const hand = h("div", { className: "hand" });
   const minute = () => (lightAt === null ? new Date().getHours() * 60 + new Date().getMinutes() : lightAt);
-  const input = h("input", { type: "range", min: 0, max: 1440, step: 5, value: minute(), "aria-label": "Time of day to preview",
-                             title: "Click or drag to see the light at another time",
-                             oninput: (e) => { lightAt = Number(e.target.value); placeHand(); updateLightPreview(); } });
+  // Where the pointer is on the strip, and the time there.
+  const ghost = h("div", { className: "ghost", hidden: true }, h("span"));
+  const input = h("input", { type: "range", min: 0, max: 1440, step: 5, value: minute(), "aria-label": "Preview time",
+                             title: "Click or drag to preview the light at another time",
+                             oninput: (e) => { lightAt = Number(e.target.value); placeHand(); updateLightPreview(); },
+                             onpointermove: (e) => {
+                               const r = input.getBoundingClientRect();
+                               const at = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+                               ghost.hidden = false;
+                               ghost.style.left = 100 * at + "%";
+                               ghost.classList.toggle("flip", at > 0.9);
+                               ghost.firstChild.textContent = hhmm(at * 1440);
+                             },
+                             onpointerleave: () => { ghost.hidden = true; } });
   const now = h("button", { type: "button", className: "link", id: "lightNow", hidden: lightAt === null,
                             title: `Stop previewing this time, ${andWindow()}`,
                             onclick: () => { lightAt = null; call("end_moment"); placeHand(); updateLightPreview(); } }, "Back to now");
@@ -1242,7 +1346,7 @@ function lightPanel() {
   placeHand();
   const drawStrip = () => call("daylight", { day: draft.day, strength: l.tint_strength }).then((res) => {
       if (!res || res.error) return;
-      // A light grey wall through today, under the light at this strength.
+      // A light gray wall through today, under the light at this strength.
       const n = res.samples.length - 1;
       strip.style.background = `linear-gradient(to right, ${res.samples.map((c, i) => `${c} ${((100 * i) / n).toFixed(2)}%`).join(", ")})`;
       const pct = (m) => (100 * m) / 1440 + "%";
@@ -1253,32 +1357,30 @@ function lightPanel() {
   });
   drawStrip();
   const look = lightScene() && h("div", { className: "light-preview" }, h("span", { className: "readout" }));
-  return h("section", { className: "panel" },
-    h("h2", {}, "Light"),
-    h("label", { className: "check" },
-      h("input", { type: "checkbox", checked: l.tint, onchange: (e) => { l.tint = e.target.checked; changed(true); } }),
-      "Light the pictures by the sun"),
+  return h("section", { className: "panel aligned day-panel" },
+    h("h2", {}, "Daily lighting"),
+    check(l.tint, "Adjust lighting throughout the day", (on) => { l.tint = on; }),
     h("div", { className: "indent-help" },
       help("Warm at sunrise and sunset, blue at twilight, dim at night.",
         "Plain light at midday; the night is dim and faded, the way eyes see in the dark. It follows the sun's height: "
         + "for your location, or the sunrise and sunset times above. It can light every scene, even a single "
-        + "picture, or only day cycles, so other pictures keep their own colours all day.")),
+        + "picture, or only day-cycle scenes, so other pictures keep their own colors all day.")),
     dependent(l.tint,
       h("div", { className: "light-body" + (look ? "" : " no-look") },
         look,
         h("div", { className: "light-controls" },
           h("div", { className: "field" }, h("span", { className: "label" }, "Applies to"),
             h("div", { className: "choices inline" },
-              radio("lightScope", l.scope !== "all", "Day cycles only", () => { l.scope = "day"; changed(true); }),
-              radio("lightScope", l.scope === "all", "Every scene", () => { l.scope = "all"; changed(true); }))),
-          slider("Strength", l.tint_strength, 0, 100, "%", (v) => { l.tint_strength = v; drawStrip(); }),
-          h("div", { className: "field" }, h("span", { className: "label" }, "Today"),
-            h("div", {}, h("div", { className: "daylight-wrap" }, strip, hand, input), ticks, now)),
+              radio("lightScope", l.scope !== "all", "Day-cycle scenes only", () => { l.scope = "day"; changed(true); }),
+              radio("lightScope", l.scope === "all", "All scenes", () => { l.scope = "all"; changed(true); }))),
+          slider("Lighting strength", l.tint_strength, 0, 100, "%", (v) => { l.tint_strength = v; drawStrip(); }),
+          h("div", { className: "field preview-time" }, h("span", { className: "label" }, "Preview time"),
+            h("div", {}, h("div", { className: "daylight-wrap" }, strip, ghost, hand, input), ticks, now)),
           slider("Bloom", l.bloom, 0, 100, "%", (v) => { l.bloom = v; }),
-          h("div", { className: "field" }, h("span"),
-            help("A soft glow around a night picture's own lights.",
-              "At night, pictures that show night keep their own lights (windows, lamps, stars) a little brighter "
-              + "than the rest. Bloom is the soft glow around them; it shows on a night picture after dark."))))),
+          note(help("Adds a soft glow to lights in nighttime pictures.",
+            "Only pictures that show night have it, and only after dark: their own lights (windows, lamps, stars) "
+            + "stay a little brighter than the rest, and Bloom is the soft glow around them. Daytime pictures "
+            + "and scenes daily lighting doesn't apply to have none."))))),
   );
 }
 
@@ -1300,7 +1402,7 @@ function updateLightPreview() {
   const scene = lightScene();
   if (!box || !scene) return;
   const minute = lightAt === null ? new Date().getHours() * 60 + new Date().getMinutes() : lightAt;
-  box.querySelector(".readout").textContent = (lightAt === null ? "Now, " : "") + hhmm(minute);
+  box.querySelector(".readout").textContent = (lightAt === null ? "Now, " : "Preview, ") + hhmm(minute);
   call("compose", { scene, day: draft.day, light: draft.light, images: draft.images, minute,
                     position: scene.kind === "day" ? minute : scene.kind === "progress" ? S.percent : 0 }).then((res) => {
     if (!res || res.error || !box.isConnected) return;
@@ -1320,16 +1422,18 @@ Kiso.setup({
       id: "screens", title: "Screens", icon: "screens", render: screensPage,
       slice: (d) => d.screens,
       revert: (d) => { d.screens = clone(saved.screens); dropMissingScenes(d); },
-      // Dim, blur, shuffle and backdrops go back to defaults; which scenes show stays.
+      // Dim, blur, shuffle and backdrops go back to defaults; which scenes show, and on which
+      // screens, stays.
       restore: (d) => {
         for (const [key, screen] of Object.entries(d.screens)) {
           const kept = { scenes: screen.scenes };
-          if ("same_as_main" in screen) kept.same_as_main = screen.same_as_main;
+          for (const k of ["same_as_main", "enabled"]) if (k in screen) kept[k] = screen[k];
           d.screens[key] = Object.assign(clone(S.defaults.screens[key]), kept);
         }
       },
-      restoreLabel: "Reset dim, blur and shuffle",
-      restoreTitle: "Dim, blur, shuffle and backdrops back to their defaults; your scenes stay. Nothing changes until Save.",
+      restoreLabel: "Reset adjustments",
+      restoreTitle: "Dim, blur, shuffle and Use backdrops back to their defaults on every screen. Your scenes, and "
+        + "which screens show them, stay. Nothing changes until Save.",
     },
     {
       // No Restore for Scenes: the default is no scenes at all.
@@ -1348,14 +1452,14 @@ Kiso.setup({
       slice: (d) => d.backdrops,
       revert: (d) => { d.backdrops = clone(saved.backdrops); },
       restore: (d) => { d.backdrops = clone(S.defaults.backdrops); },
-      restoreLabel: "Restore Backdrops defaults",
-      restoreTitle: "The deck table, add-on panel and outline back to their defaults. Nothing changes until Save.",
+      restoreLabel: "Reset backdrop settings",
+      restoreTitle: "The deck list panel, statistics panel and text outline back to their defaults. Nothing changes until Save.",
     },
     {
       id: "day", title: "Day & time", icon: "day", render: dayPage,
       slice: (d) => [d.day, d.transition_seconds, d.light],
       revert: (d) => { d.day = clone(saved.day); d.transition_seconds = saved.transition_seconds; d.light = clone(saved.light); },
-      restoreLabel: "Restore Day & time defaults",
+      restoreLabel: "Reset Day & time settings",
       restoreTitle: "Sunrise and sunset, light and crossfade back to their defaults. Nothing changes until Save.",
       restore: (d) => {
         d.day = clone(S.defaults.day);
@@ -1398,6 +1502,29 @@ Kiso.setup({
     if (!(p === "scenes" && scrub !== null) && !(p === "day" && lightAt !== null)) call("end_moment");
   },
   afterRender: () => refreshPreviews(),
+  // kiso shots (dev): the Scenes page shows each scene in the editor, then the dialogs it opens.
+  // Only looking: nothing is added, combined, trashed or saved.
+  shots: {
+    scenes: async ({ shot }) => {
+      for (const s of draft.scenes.slice()) {
+        selectScene(s.id);
+        render();
+        await shot(s.name);
+      }
+      if (!draft.scenes.length) await shot("Scenes");
+      const combine = document.getElementById("combine");
+      if (combine) {
+        combine.click();
+        await shot("Combine pictures");
+        closeModal();
+      }
+      openLibrary();
+      await shot("Picture library");
+      document.getElementById("tab-trash").click();
+      await shot("Trash");
+      closeModal();
+    },
+  },
   onCancel: () => stopPlaying(),
   onSaveError: (err) => { if (err.page === "scenes") sel = err.field; },
 });

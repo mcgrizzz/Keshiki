@@ -1524,6 +1524,37 @@ Kiso.setup({
       await shot("Trash");
       closeModal();
     },
+    // Asked for by name (kiso shots --tour NAME --size WxH): the README's and listing's pictures.
+    // The Screens page as most people see it: previewing in Anki's window, the default (only the
+    // page is told so; the preference stays as it is).
+    readme: async ({ shot }) => {
+      const was = S.in_window;
+      const box = document.getElementById("in-window");
+      S.in_window = true;
+      box.checked = true;
+      page = "screens";
+      render();
+      await shot("Screens", { whole: false, wait: 1200 });
+      S.in_window = was;
+      box.checked = was !== false;
+    },
+    // The first day-cycle scene in the editor through a whole day, from 04:00 every half hour.
+    "day-film": async ({ shot, wait }) => {
+      const scene = draft.scenes.find((sc) => sc.kind === "day");
+      if (!scene) throw new Error("no day-cycle scene");
+      page = "scenes";
+      selectScene(scene.id);
+      render();
+      await wait(1000);
+      const preview = document.querySelector(".preview");
+      for (let i = 0; i < 48; i++) {
+        scrub = (240 + 30 * i) % 1440;
+        await updateScenePreview(preview, false);
+        await shot(hhmm(scrub), { whole: false, wait: 250 });
+      }
+      selectScene(scene.id);   // back to now, and Anki's window to its own look
+      render();
+    },
   },
   onCancel: () => stopPlaying(),
   onSaveError: (err) => { if (err.page === "scenes") sel = err.field; },

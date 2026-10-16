@@ -839,6 +839,15 @@ def check(app, shots, base):
     assert QImage(str(out / next(n for n in names if n.startswith("640px")))).width() == 640
     assert not kiso_settings.open_dialogs and mw.addonManager.getConfig("keshiki") == cfg_before
     assert geometry() == geom_before, "the run changed the dialog's remembered size"
+    # Tours named for no page (the README's pictures) run only when asked for, alone, at the size asked for.
+    assert not any("-readme-" in n or "-day-film-" in n for n in names), names
+    kiso_shots.start(mw, addon().addon._settings, '{"id": "tour", "tour": "readme", "size": [700, 500]}', base,
+                     logging.getLogger("check"))
+    until(app, lambda: (base / "kiso_shots" / "tour" / "done.json").is_file(), 60, "the tour didn't finish")
+    done = json.loads((base / "kiso_shots" / "tour" / "done.json").read_text())
+    assert not done["errors"] and done["files"] == ["700x500-001-readme-screens.png"], done
+    assert QImage(str(base / "kiso_shots" / "tour" / done["files"][0])).size().width() == 700
+    assert mw.addonManager.getConfig("keshiki") == cfg_before and geometry() == geom_before
     # A settings window already open is left alone.
     dlg = open_page()
     kiso_shots.start(mw, addon().addon._settings, '{"id": "busy"}', base, logging.getLogger("check"))

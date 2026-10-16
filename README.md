@@ -5,11 +5,11 @@ Background scenes for Anki's main window that follow the sun through the day, an
 ![A day-cycle scene at dawn, midday, dusk, night and midnight](docs/images/scenes-through-the-day.webp)
 
 - **One picture across the whole window.** The toolbar, the main area and the bottom bar show one continuous image, with no seams where they meet.
-- **Day cycles.** Give a scene dawn, day, dusk and night versions. Each fades in between two moments of the sun you choose (from first light to sunrise, say), at a set time, or once the version before it is fully in, for the real sun where you are or the sunrise and sunset times you set.
-- **Light by the sun.** Optionally colour your day cycles (or every picture) by the sun's height: warm low sun, plain midday, blue twilight and a dim, faded night, based on published daylight measurements and night-vision research. At night, a picture's own lights (lit windows, lamps, stars) stay lit and glow softly.
+- **Day cycles.** Give a scene dawn, day, dusk and night versions. Each fades in between two moments of the sun you choose (from first light to sunrise, say), at a set time, or after the version before it finishes its transition, for the real sun where you are or the sunrise and sunset times you set.
+- **Daily lighting.** Optionally light your day-cycle scenes (or all scenes) by the sun's height: warm low sun, plain midday, blue twilight and a dim, faded night, based on published daylight measurements and night-vision research. At night, a picture's own lights (lit windows, lamps, stars) stay lit and glow softly.
 - **All done for today.** Show different scenes once nothing is left to study in any deck.
 - **Albums and shuffle.** Add a batch of pictures, or a whole folder, and they become an album; a folder's album can stay in step with the folder as you add to it. On a screen, an album's pictures take turns with its other scenes: every 15 minutes up to once a day, or each time Anki starts. A screen with a single scene keeps it.
-- **Readable.** Dim and blur are set separately for the deck list and for studying, and dimming follows Anki's light or dark theme. With backdrops on, the deck table and other add-ons' content under it (a heatmap, say) sit on frosted panels, and text that's hard to read on the picture gets a slight colour shift or an outline.
+- **Readable.** Dim and blur are set separately for the deck list and for studying, and dimming follows Anki's light or dark theme. With backdrops on, the deck list panel and the statistics under it (a heatmap, say) sit on blurred panels, and text that's hard to read on the picture gets a slight color shift or an outline.
 
 ![The deck list with backdrops: a frosted deck table and a fitted panel behind a heatmap add-on](docs/images/main-backdrops.jpg)
 

@@ -73,6 +73,16 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "$$('.preview .keshiki-layer').filter(e => !e.dataset.leaving)"
                                    ".map(e => e.dataset.src.split('/').pop())") == ["dusk.png"], 5,
           "the preview doesn't show the tile's picture")
+    # The cause of that once: a look asked for while a new stage's first fade waits for its first
+    # frame wins; the waiting one is dropped, not laid over it afterwards.
+    run_js(dlg, """(() => { const box = document.createElement('div'); document.body.append(box); window._stBox = box;
+        const st = new keshiki.Stage(box, false);
+        const look = (name) => ({ layers: [{ src: imageUrl(name), opacity: 1 }], dim: 0, blur: 0, fade: 300 });
+        st.apply(look('dawn.png'), false); st.apply(look('dusk.png'), true); })()""")
+    pump(app, 0.8)
+    assert run_js(dlg, "[..._stBox.querySelectorAll('.keshiki-layer')].filter(e => !e.dataset.leaving)"
+                       ".map(e => e.dataset.src.split('/').pop())") == ["dusk.png"], "a look waiting for a frame won"
+    run_js(dlg, "_stBox.remove()")
     run_js(dlg, "$('#modal .dialog-foot button').click()")
     run_js(dlg, "$$('.album-tile .remove')[3].click()")
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 3, 5)

@@ -151,9 +151,14 @@
     // into their curve (a negative transition delay), so they end with the others.
     apply(look, instant, gone = 0) {
       // A fade on a page that hasn't drawn yet waits for its first frame: dim, blur and
-      // pictures all fade, instead of jumping to the end.
+      // pictures all fade, instead of jumping to the end. A look asked for meanwhile wins:
+      // the waiting one is dropped, not laid over it.
+      const asked = (this.asked = (this.asked || 0) + 1);
       if (!instant && !this.drawn) {
-        drawn().then(() => { this.drawn = true; this.apply(look, false, gone); });
+        drawn().then(() => {
+          this.drawn = true;
+          if (this.asked === asked) this.apply(look, false, gone);
+        });
         return;
       }
       const key = JSON.stringify(look || null);

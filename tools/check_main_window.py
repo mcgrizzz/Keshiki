@@ -68,8 +68,9 @@ def check(app, shots, base):
     renderer.shown = None
     mw.deckBrowser.refresh()
     until(app, lambda: (stage_state(app, mw.toolbarWeb) or {}).get("on"), 5, "the toolbar stayed bare at launch")
-    pump(app, 0.3)
-    assert stage_state(app, mw.toolbarWeb)["look"] == stage_state(app, mw.web)["look"] == renderer.shown
+    # The toolbar can have it before the deck list's page has loaded (a slow machine): wait for both.
+    looks = lambda: [(stage_state(app, w) or {}).get("look") for w in (mw.toolbarWeb, mw.web)]  # noqa: E731
+    until(app, lambda: looks() == [renderer.shown] * 2, 5, f"the toolbar and the deck list differ at launch: {looks()}")
     print("PASS: at launch, the toolbar Anki drew before the collection opened gets the first look too.")
 
     # Zooming the deck list (Ctrl+wheel, View > Zoom) keeps its stage on the whole window:
@@ -299,9 +300,8 @@ def check(app, shots, base):
     mw.pm.set_hide_bottom_bar(True)
     mw.bottomWeb.hide()
     until(app, lambda: mw.bottomWeb.height() <= 1, 5, "bottom bar didn't collapse")
-    pump(app, 0.3)
     top = mw.bottomWeb.mapTo(central, aqt.qt.QPoint(0, 0)).y()
-    assert round(stage_state(app, mw.bottomWeb)["rect"]["y"]) == -top, "bottom stage kept its old offset"
+    until(app, lambda: round(stage_state(app, mw.bottomWeb)["rect"]["y"]) == -top, 5, "bottom stage kept its old offset")
     mw.bottomWeb.show()
     mw.pm.set_hide_bottom_bar(False)
     until(app, lambda: mw.bottomWeb.height() > 1, 5)

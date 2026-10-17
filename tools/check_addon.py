@@ -3,7 +3,7 @@ turning Keshiki off and on in Tools > Add-ons."""
 
 # isort: off
 # kiso_dev.harness sets Qt up for offscreen use before aqt loads, so it comes first.
-from kiso_dev.harness import addon, js, run, until
+from kiso_dev.harness import addon, js, run, until, pump
 
 import aqt
 from images import make_test_image
@@ -48,7 +48,14 @@ def check(app, shots, base):
     until(app, lambda: js(app, mw.web, stages) == 1, 5,
           f"one stage per page after the reload, not {js(app, mw.web, stages)}")
     assert mw.addonManager.getWebExports("keshiki") == library.WEB_EXPORTS, mw.addonManager.getWebExports("keshiki")
-    print("PASS: reload_addon swaps in the code on disk, registers what it serves, and redraws the window.")
+    # A settings window opened before the reload still holds the old renderer: what it sends
+    # does nothing (its timers are gone), rather than fail.
+    pump(app, 0.2)
+    old.set_preview(cfg)
+    old.show_scene_moment(None)
+    old.refresh(progress_changed=True)
+    print("PASS: reload_addon swaps in the code on disk, registers what it serves, and redraws the window; the old "
+          "renderer does nothing.")
 
     mw.addonManager.toggleEnabled("keshiki", False)
     until(app, lambda: not any(background_on(app, w) for w in webs), 10, "background stayed after turning off")

@@ -8,7 +8,7 @@ from keshiki import folders, library
 @pytest.fixture
 def lib(tmp_path, monkeypatch):
     """The library's folders, in a temporary user_files."""
-    for attr in ("IMAGES", "THUMBS", "FOLDERS", "TRASH"):
+    for attr in ("IMAGES", "THUMBS", "FOLDERS", "TRASH", "DISPLAY"):
         monkeypatch.setattr(library, attr, tmp_path / "user_files" / attr.lower())
     return tmp_path
 

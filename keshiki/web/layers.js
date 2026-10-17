@@ -1,11 +1,13 @@
 /* Keshiki background layers: crossfades between looks Python computes.
-   A look is {layers: [{src, opacity, x, y, grade?, light?, lights?, glow?}],
+   A look is {layers: [{image, src, opacity, x, y, grade?, light?, lights?, glow?}],
    dim: 0-1, blur: px, fade: ms}, layers bottom first. A grade is [[gain r, g, b],
    [offset r, g, b]] in sRGB (smoothing a fade); light is the daylight matrix
    in linear RGB (daylight.py); lights is the picture's lights alone (library.py),
    glow (0-1) how much they shine through at night and bloom (0-1) how much
    they glow around. backdrops: the deck list's, on screens that use them (see backdrop
-   and contrast below). No build step. */
+   and contrast below). image names the picture and src is where it's read from: the
+   picture, or a copy of it sized for the screen (display.py), which may change while it
+   shows. No build step. */
 (function () {
   if (window.keshiki) return;
 
@@ -46,10 +48,16 @@
     return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   }
 
+  // A layer is its picture (whichever file it's read from) at its blur.
+  const layerKey = (layer, blur) => `${layer.image || layer.src}@${blur || 0}`;
+
+  // Resolves with the picture once it's loaded and decoded (off the page's thread), so the
+  // frame that starts its fade doesn't stall decoding a big one; null if it can't be read.
   function loaded(src) {
     return new Promise((resolve) => {
       const img = new Image();
-      img.onload = img.onerror = () => resolve();
+      img.onload = () => (img.decode ? img.decode() : Promise.resolve()).catch(() => {}).then(() => resolve(img));
+      img.onerror = () => resolve(null);
       img.src = src;
     });
   }
@@ -117,7 +125,13 @@
       const total = (look && look.fade) || 0, gone = Math.max(0, Date.now() - began);
       const layers = (look && look.layers) || [];
       if (!layers.length || gone >= total - 30) return this.apply(look, true);
-      const timing = { duration: total, delay: -gone, easing: "ease-in-out", fill: "backwards" };
+      // Each animation starts when the fade began, on this page's clock (its timeline counts
+      // from performance.timeOrigin), not at its first frame: a fresh page can take a while to
+      // draw one, and would run that far behind the bars.
+      const fade = (el, frames) => {
+        const a = el.animate(frames, { duration: total, easing: "ease-in-out", fill: "backwards" });
+        a.startTime = began - performance.timeOrigin;
+      };
       const d0 = Number(this.dim.style.opacity || 0);
       const old = [...this.stack.children];
       this.shown = JSON.stringify(look);
@@ -130,8 +144,8 @@
       if (this.onShow) this.onShow();
       this.root.style.opacity = "1";
       this.dim.style.opacity = String(look.dim || 0);
-      this.dim.animate([{ opacity: d0 }, { opacity: look.dim || 0 }], timing);
-      const keys = layers.map((l) => `${l.src}@${this.blur}`);
+      fade(this.dim, [{ opacity: d0 }, { opacity: look.dim || 0 }]);
+      const keys = layers.map((l) => layerKey(l, this.blur));
       if (keys.join(" ") === old.map((el) => el.dataset.key).join(" ")) {
         old.forEach((el, i) => this.set(el, layers[i]));   // the same pictures: only the dim changes
         return;
@@ -139,7 +153,7 @@
       // New pictures (or a new blur) fade in over the old, which go once they're covered.
       for (const layer of layers) {
         this.enter(layer, 0);
-        this.stack.lastElementChild.animate([{ opacity: 0 }, { opacity: layer.opacity }], timing);
+        fade(this.stack.lastElementChild, [{ opacity: 0 }, { opacity: layer.opacity }]);
       }
       for (const el of old) {
         el.dataset.leaving = "1";
@@ -148,17 +162,23 @@
     }
 
     // `gone` (ms): how long ago this change began elsewhere; its transitions start that far
-    // into their curve (a negative transition delay), so they end with the others.
-    apply(look, instant, gone = 0) {
+    // into their curve (a negative transition delay), so they end with the others. `began`
+    // (ms since the epoch): when Python sent the look to every webview. A page that can't draw
+    // straight away (a fresh page, or a big picture holding up the frame) starts its fade at its
+    // next frame that far into the curve, so the bars and the main area keep in step.
+    apply(look, instant, gone = 0, began = null) {
       // A fade on a page that hasn't drawn yet waits for its first frame: dim, blur and
       // pictures all fade, instead of jumping to the end. A look asked for meanwhile wins:
       // the waiting one is dropped, not laid over it.
       const asked = (this.asked = (this.asked || 0) + 1);
-      if (!instant && !this.drawn) {
-        drawn().then(() => {
+      if (!instant && (!this.drawn || began)) {
+        (this.drawn ? Promise.resolve() : drawn()).then(() => requestAnimationFrame(() => {
           this.drawn = true;
-          if (this.asked === asked) this.apply(look, false, gone);
-        });
+          if (this.asked !== asked) return;
+          this.synced = !!began;
+          this.apply(look, false, began ? Math.max(0, Date.now() - began) : gone);
+          this.synced = false;
+        }));
         return;
       }
       const key = JSON.stringify(look || null);
@@ -176,7 +196,8 @@
       const ms = instant ? 0 : small ? Math.min(SMALL_STEP_MS, (look && look.fade) || 0) : (look && look.fade) || 0;
       this.root.style.setProperty("--kk-fade", ms + "ms");
       this.root.style.setProperty("--kk-delay", ms && gone > 0 ? -gone + "ms" : "0ms");
-      this.began = ms && gone > 0 ? Date.now() - gone : null;   // for pictures that start fading later
+      // For pictures that start fading later (once decoded): as far in as the others are by then.
+      this.began = ms && (gone > 0 || this.synced) ? Date.now() - gone : null;
       const want = (look && look.layers) || [];
       if (!want.length) {
         this.root.style.opacity = "0";
@@ -190,12 +211,11 @@
       // halves the frame rate): a change of blur crossfades to layers drawn at the new blur,
       // as a change of picture does. A layer is its picture at its blur.
       this.blur = look.blur || 0;
-      const layerKey = (layer) => `${layer.src}@${this.blur}`;
 
       const live = [...this.stack.children].filter((el) => !el.dataset.leaving);
       // Carry on with the newest layer already showing the base picture, wherever it is
       // in the stack (just after a change, the old picture is still underneath it).
-      const at = live.map((el) => el.dataset.key).lastIndexOf(layerKey(want[0]));
+      const at = live.map((el) => el.dataset.key).lastIndexOf(layerKey(want[0], this.blur));
       if (at >= 0) {
         const base = live[at];
         const was = base.target;
@@ -209,7 +229,7 @@
         }
         const above = live.slice(at + 1);
         const top = want[1];
-        const liveTop = top && above.find((el) => el.dataset.key === layerKey(top));
+        const liveTop = top && above.find((el) => el.dataset.key === layerKey(top, this.blur));
         if (liveTop) this.set(liveTop, top);
         else if (top) this.enter(top, ms);
         for (const el of above) if (el !== liveTop) this.leaveOver(base, el, ms);
@@ -237,7 +257,7 @@
       const nearAll = (a, b) => (!a && !b) || (a && b && a.flat(Infinity).every((x, i) => near(x, b.flat(Infinity)[i])));
       return look.layers.every((l, i) => {
         const p = prev.layers[i];
-        return p.src === l.src && p.lights === l.lights && near(p.opacity, l.opacity) && near(p.glow, l.glow)
+        return layerKey(p) === layerKey(l) && p.lights === l.lights && near(p.opacity, l.opacity) && near(p.glow, l.glow)
           && near(p.bloom, l.bloom) && nearAll(p.light, l.light) && nearAll(p.grade, l.grade);
       });
     }
@@ -246,6 +266,7 @@
     // night, its own lights on top, kept out of the daylight, brightened a little and
     // softly blooming. Opacity on the group crossfades all of it together.
     set(el, layer) {
+      if (el.dataset.src !== layer.src) this.resize(el, layer.src);
       el.style.setProperty("--kx", layer.x + "%");
       el.style.setProperty("--ky", layer.y + "%");
       el.target = layer.opacity;
@@ -293,10 +314,26 @@
       pic.style.filter = `url(#${pic.filterId})`;
     }
 
+    // The same picture read from another file (its display copy, made since it began to
+    // show, or the setting turned on or off): the new file goes under the old one, which goes
+    // once the new one can paint, so there's no fade and no gap. Copies are never see-through
+    // (a see-through picture's is laid on the canvas colour that shows through it:
+    // library.make_display), so the two over each other look the same. They share the filter.
+    resize(el, src) {
+      el.dataset.src = src;
+      const old = el.pic, pic = div("keshiki-pic");
+      pic.style.backgroundImage = `url("${src}")`;
+      Object.assign(pic, { fx: old.fx, filterId: old.filterId });
+      pic.style.filter = old.style.filter;
+      el.insertBefore(pic, old);
+      el.pic = pic;
+      loaded(src).then(drawn).then(() => old.remove());
+    }
+
     enter(layer, ms) {
       const el = div("keshiki-layer");
       el.dataset.src = layer.src;
-      el.dataset.key = `${layer.src}@${this.blur || 0}`;
+      el.dataset.key = layerKey(layer, this.blur);
       if (this.blur) {
         el.style.filter = `blur(${this.blur}px)`;
         el.style.inset = -2 * this.blur + "px";   // overscan, so the window's edges don't fade out
@@ -315,7 +352,8 @@
       // latest opacity, which a step since may have changed. (A page that hasn't drawn a
       // frame yet never gets here: apply waits for one.)
       const began = this.began;
-      el.ready = loaded(layer.src).then(() => {
+      el.ready = loaded(layer.src).then((img) => {
+        el.decoded = img;   // kept while the layer is, so the decoded picture stays at hand
         el.loading = false;
         if (el.dataset.leaving) return;   // on its way out before it could paint
         void el.offsetWidth;
@@ -842,6 +880,11 @@
         };
         if (document.body) start();
         else document.addEventListener("DOMContentLoaded", start);
+        // Once the page has drawn, Python may start a screen change's fade (renderer.py,
+        // on_screen_change): the bars and this page then fade together from the start.
+        const ready = () => drawn().then(() => { if (typeof pycmd === "function") pycmd("keshiki:ready"); });
+        if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ready);
+        else ready();
         // Zooming the page (Ctrl+wheel, View > Zoom) changes the window's size in its CSS
         // pixels without resizing any widget, so ask Python for the geometry again.
         let asked = false;

@@ -23,8 +23,9 @@ from aqt.webview import AnkiWebView, WebContent
 
 from . import folders, library
 from ._kiso import config as kiso_config
-from ._kiso.hooks import Subscriptions
+from ._kiso.hooks import Subscriptions, guard
 from .config import ADDON_PACKAGE, migrate
+from .display import Display
 from .schedule import build_look, screen_source
 from .sun import location_sun
 
@@ -35,7 +36,24 @@ WEB = Path(__file__).resolve().parent / "web"
 # most, at sunset), so the page eases them in over 0.8 s; bigger changes ease in
 # over transition_seconds (layers.js, Stage.small).
 TICK_MS = 30_000
+# A screen change waits for Anki's new page to draw (it builds the deck list, overview and
+# reviewer after the screen has changed), so the bars and the page fade together from the
+# start; this long at most, for a change that brings no page.
+SCREEN_SETTLE_MS = 1000
 STUDY_STATES = ("overview", "review")
+
+
+def now_minutes() -> int:
+    """Minutes since the epoch, in local time: what shuffles count in."""
+    now = datetime.now().astimezone()
+    return int(time.time() / 60 + now.utcoffset().total_seconds() / 60)
+
+
+def same_but_files(a: Optional[dict], b: Optional[dict]) -> bool:
+    """Whether two looks differ only in their pictures' files (a copy made for one)."""
+    def bare(look: dict) -> dict:
+        return dict(look, layers=[{k: v for k, v in layer.items() if k != "src"} for layer in look.get("layers") or []])
+    return bool(a and b) and bare(a) == bare(b)
 
 
 def load_config(mw) -> dict:
@@ -50,17 +68,25 @@ class Renderer(QObject):
         self.preview: Optional[dict] = None   # the settings page's unsaved draft, shown live
         self.scene_look: Optional[dict] = None   # a moment the scene editor is scrubbed to
         self.launch_seed = random.randrange(1 << 30)
+        self.chosen: Optional[dict] = None   # a turn picked to show now (schedule.current_turn)
         self.shown: Optional[dict] = None     # the look on screen now
         # A crossfade under way: (the look before, the look it's fading to, when it began
         # (monotonic), seconds, when it began (epoch ms, for the page)).
         self._fading: Optional[Tuple[dict, dict, float, float, int]] = None
         self._progress: Optional[float] = None
         self._all_done: Optional[bool] = None
+        self._watching = False   # the screens (watch_screens)
+        self.torn_down = False   # a dev reload replaced it (a settings window open since may still call it)
         self.enabled = True   # False once turned off in Tools > Add-ons, until Anki restarts
         self.subs = Subscriptions(log)
         self._geometry = self.subs.debounce(self, self.push_geometry, "Background geometry")
+        # A screen change waiting for its page (on_screen_change): looks wait too.
+        self._settling = self.subs.debounce(self, self.screen_settled, "Screen change")
         self._web_assets = (WEB / "layers.css").read_text(encoding="utf-8"), \
             (WEB / "layers.js").read_text(encoding="utf-8")
+        # Copies are made beside the collection's work, never holding it up (an answer, a sync).
+        self.display = Display(lambda fn, done: mw.taskman.run_in_background(
+            fn, lambda fut: done(fut.result()), uses_collection=False), lambda: self.refresh())
 
     # -- wiring -----------------------------------------------------------
 
@@ -68,13 +94,21 @@ class Renderer(QObject):
         refresh_progress = lambda *_: self.refresh(progress_changed=True)  # noqa: E731
         self.subs.add(gui_hooks.webview_will_set_content, self.on_will_set_content, "Page background")
         self.subs.add(gui_hooks.webview_did_inject_style_into_page, self.on_did_inject_style, "Page background")
-        self.subs.add(gui_hooks.state_did_change, refresh_progress, "Screen change")
+        self.subs.add(gui_hooks.state_did_change, self.on_screen_change, "Screen change")
         self.subs.add(gui_hooks.reviewer_did_answer_card, self.on_answer, "Answer")
         self.subs.add(gui_hooks.operation_did_execute, self.on_operation, "Collection change")
         # A new day brings new cards: "all done" may no longer hold.
         self.subs.add(gui_hooks.day_did_change, refresh_progress, "New day")
         self.subs.filter(gui_hooks.webview_did_receive_js_message, self.on_js_message, "Page message")
         self.subs.timer(self, TICK_MS, self.refresh, "Background tick")
+        try:
+            library.prune_display()   # before any copy is in use
+        except OSError:
+            log.exception("Couldn't prune the display copies")
+        self.display.cover(*self.screen_pixels())
+        self.on_theme_change(refresh=False)
+        self.subs.add(gui_hooks.theme_did_change, self.on_theme_change, "Theme change")
+        self.watch_screens()
         self.refresh_folders()
         for widget in self._webviews() + [self.mw.form.centralwidget]:
             widget.installEventFilter(self)
@@ -95,7 +129,15 @@ class Renderer(QObject):
 
     def teardown(self) -> None:
         """Undo install(), for a dev reload; pages keep their background until redrawn."""
+        self.torn_down = True
         self.subs.remove_all()
+        self.display.stopped = True
+        self._watching = False   # the screens' connections stay, doing nothing (see watch_screens)
+        try:
+            from aqt.qt import QGuiApplication
+            QGuiApplication.instance().screenAdded.disconnect(self._screen_added)
+        except (AttributeError, TypeError, RuntimeError):   # never connected
+            pass
         for widget in self._webviews() + [self.mw.form.centralwidget]:
             widget.removeEventFilter(self)
         self.deleteLater()
@@ -123,6 +165,12 @@ class Renderer(QObject):
         self.scene_look = look
         self.refresh()
 
+    def choose(self, scene: str, image: str) -> None:
+        """Show this album's picture now, on the screens that have the album, until their
+        shuffle moves on."""
+        self.chosen = {"scene": scene, "image": image, "at": now_minutes()}
+        self.refresh()
+
     def set_enabled(self, enabled: bool) -> None:
         self.enabled = enabled
         self.refresh()
@@ -142,18 +190,20 @@ class Renderer(QObject):
             return self.scene_look
         cfg = self.active_config()
         now = datetime.now().astimezone()
-        offset = now.utcoffset().total_seconds() / 60
         return build_look(
             cfg, self.screen(),
             minute_of_day=now.hour * 60 + now.minute + now.second / 60,
-            now_minutes=int(time.time() / 60 + offset),
+            now_minutes=now_minutes(),
             launch_seed=self.launch_seed,
-            sun=self.sun_today(cfg["day"], now.date(), offset),
+            sun=self.sun_today(cfg["day"], now.date(), now.utcoffset().total_seconds() / 60),
             percent_done=self.percent_done,
-            image_url=library.image_url,
+            # Unblurred: copies only if asked for (they're a little softer); blurred: always.
+            image_url=self.display.url if cfg.get("display_copies") else library.image_url,
             image_stats=library.image_stats,
             image_lights=library.lights_url,
             all_done=self.all_done,
+            chosen=self.chosen,
+            copy_url=self.display.url,   # a blurred screen: copies
         )
 
     def sun_today(self, day_cfg: dict, today: date, offset: float):
@@ -211,10 +261,26 @@ class Renderer(QObject):
 
     # -- pushing it to the page -------------------------------------------
 
+    def on_screen_change(self, *_) -> None:
+        """A new screen: its look waits until Anki's new page has drawn (on_js_message, ready)
+        or SCREEN_SETTLE_MS, whichever comes first. Meanwhile the page that loads starts on the
+        look already showing, and then everything fades to the new one together."""
+        self._progress = None
+        self._all_done = None
+        self._settling.restart(SCREEN_SETTLE_MS / 1000)
+
+    def screen_settled(self) -> None:
+        self._settling.cancel()
+        self.refresh()
+
     def refresh(self, progress_changed: bool = False) -> None:
+        if self.torn_down:
+            return   # its timers are gone; the new renderer has the window
         if progress_changed:
             self._progress = None
             self._all_done = None
+        if self._settling.pending:
+            return   # screen_settled brings the latest look
         if self.mw.col is None:
             return
         look = self.look()
@@ -222,9 +288,16 @@ class Renderer(QObject):
             return
         before, self.shown = self.shown, look
         seconds = (look or {}).get("fade", 0) / 1000
-        self._fading = ((before, look, time.monotonic(), seconds, int(time.time() * 1000))
-                        if before and look and seconds else None)
-        js = f"window.keshiki && keshiki.main && keshiki.main.apply({json.dumps(look)})"
+        fading = self._fading
+        if fading and same_but_files(fading[1], look) and time.monotonic() - fading[2] < fading[3]:
+            # A copy made mid-fade: the pages swap the file in place and carry on with the
+            # fade they're in, so a page that loads now joins that one, from where it began.
+            self._fading = (fading[0], look, *fading[2:])
+        else:
+            self._fading = ((before, look, time.monotonic(), seconds, int(time.time() * 1000))
+                            if before and look and seconds else None)
+        began_ms = self._fading[4] if self._fading else int(time.time() * 1000)
+        js = f"window.keshiki && keshiki.main && keshiki.main.apply({json.dumps(look)}, false, 0, {began_ms})"
         for web in self._webviews():
             web.eval(js)
 
@@ -235,6 +308,15 @@ class Renderer(QObject):
         return {"w": central.width() / zoom, "h": central.height() / zoom, "x": pos.x() / zoom, "y": pos.y() / zoom}
 
     def on_js_message(self, handled: Tuple[bool, Any], message: str, context: Any) -> Tuple[bool, Any]:
+        # The main area's new page has drawn its first frame: a screen change can fade now.
+        if message == "keshiki:ready":
+            if self._settling.pending and self._web_for_context(context) is self.mw.web:
+                self.screen_settled()
+            # Its place in the window as it is now: a page set up while Anki was still laying the
+            # window out (at launch) could otherwise keep a place measured before that settled.
+            if not self._geometry.pending:
+                self._geometry.restart(0)
+            return (True, None)
         # A page resized itself: zooming changes its size in CSS pixels, with no widget event.
         if message != "keshiki:geometry":
             return handled
@@ -242,13 +324,68 @@ class Renderer(QObject):
             self._geometry.restart(0)
         return (True, None)
 
+    def on_theme_change(self, refresh: bool = True) -> None:
+        """A see-through picture's copies are laid on the theme's canvas, which shows through it."""
+        from aqt import colors
+        from aqt.theme import theme_manager
+        self.display.backdrop = library.backdrop_hex(theme_manager.var(colors.CANVAS))
+        if refresh:
+            self.refresh()
+
+    def screen_pixels(self) -> Tuple[float, float]:
+        """The most device pixels a background may have to fill, across and down: the largest
+        screen's (the window may move there), or the window's if it's bigger (across two)."""
+        from aqt.qt import QGuiApplication
+        sizes = [(s.geometry().width() * s.devicePixelRatio(), s.geometry().height() * s.devicePixelRatio())
+                 for s in QGuiApplication.screens()]
+        central = self.mw.form.centralwidget
+        ratio = central.devicePixelRatioF()
+        sizes.append((central.width() * ratio, central.height() * ratio))
+        return max(w for w, _ in sizes), max(h for _, h in sizes)
+
+    def watch_screens(self) -> None:
+        """A screen plugged in, or a screen's resolution or scaling changed, may need bigger
+        copies, whether or not Anki's window moves (moving and resizing it are watched anyway).
+        Each screen is connected once, when it's first seen. Signals are never compared (that
+        crashes PyQt on Windows), and a screen's are never disconnected: one that's gone may
+        be, and touching it would crash too. After teardown they do nothing."""
+        from aqt.qt import QGuiApplication
+        app = QGuiApplication.instance()
+        self._watching = True
+        self._screens_changed = guard(self.on_screens_changed, log, "Screens changed")
+        self._screen_added = guard(self.on_screen_added, log, "Screen added")
+        app.screenAdded.connect(self._screen_added)
+        for screen in app.screens():
+            self.watch_screen(screen)
+
+    def watch_screen(self, screen) -> None:
+        screen.geometryChanged.connect(self._screens_changed)
+        screen.logicalDotsPerInchChanged.connect(self._screens_changed)
+
+    def on_screen_added(self, screen) -> None:
+        if self._watching:
+            self.watch_screen(screen)
+            self.on_screens_changed()
+
+    def on_screens_changed(self, *_) -> None:
+        if self._watching and not self._geometry.pending:
+            self._geometry.restart(0)
+
     def push_geometry(self) -> None:
+        if self.display.cover(*self.screen_pixels()):
+            self.refresh()   # bigger copies (the pictures themselves until they're made)
         for web in self._webviews():
             web.eval(f"window.keshiki && keshiki.main && keshiki.main.geom({json.dumps(self.geometry(web))})")
 
     def bootstrap_js(self, web: AnkiWebView) -> str:
         if self.shown is None and self.mw.col is not None:
             self.shown = self.look()
+            # The first look. Pages drawn before the collection was open (Anki draws the
+            # toolbar once, at launch) started bare: they show it too, as this page will.
+            js = f"window.keshiki && keshiki.main && keshiki.main.apply({json.dumps(self.shown)}, true)"
+            for other in self._webviews():
+                if other is not web:
+                    other.eval(js)
         # A page that loads during a crossfade (Anki builds the deck list and the overview
         # after the screen has changed) starts on the look before and catches up with the
         # bars, which have been fading all along: from when it actually runs (layers.js, join).

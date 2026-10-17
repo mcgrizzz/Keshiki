@@ -32,13 +32,16 @@ Object.assign(ICONS, {
   backdrops: "M4 5h16v6H4zM6 14h12v5H6zM8 8h5M9 16.5h4",
   pause: "M8 5v14M16 5v14",
   rename: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4",
+  crop: "M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2",
+  general: "M4 6h9M17 6h3M15 4v4M4 12h3M11 12h9M9 10v4M4 18h11M19 18h1M17 16v4",
 });
 
 const sceneById = (id) => draft.scenes.find((s) => s.id === id);
 const isLinked = (name) => !!name && name.startsWith("@");
 const pictureInfo = (name) => images.find((i) => i.name === name) || linked[name] || {};
 const imageUrl = (name) => pictureInfo(name).url;
-const thumbUrl = (name) => pictureInfo(name).thumb;
+const thumbsMade = {};   // linked pictures' thumbnails made since the page loaded (keshikiThumbs)
+const thumbUrl = (name) => pictureInfo(name).thumb || thumbsMade[name] || "";
 const bg = (url) => (url ? { backgroundImage: `url("${url}")` } : {});
 // Every picture a scene uses (in the draft: an unsaved scene's pictures count too).
 const imagesInUse = () => new Set(draft.scenes.flatMap((sc) => sc.versions.map((v) => v.image)).filter(Boolean));
@@ -57,6 +60,21 @@ function sceneThumb(scene) {
   const v = (scene.versions || []).find((v) => v.image);
   return v ? thumbUrl(v.image) : null;
 }
+const sceneImage = (scene) => ((scene.versions || []).find((v) => v.image) || {}).image || "";
+
+// A picture's thumbnail as a background, marked with the picture: a linked folder's thumbnails
+// are made in the background after the page has drawn, and keshikiThumbs fills them in. Until
+// then the tile is empty (never the full picture: a folder of big ones would bog the page down).
+const thumbOf = (name) => ({ style: bg(thumbUrl(name)), "data-thumb": name || "" });
+window.keshikiThumbs = (made) => {
+  Object.assign(thumbsMade, made);
+  for (const el of document.querySelectorAll("[data-thumb]")) {
+    const thumb = made[el.dataset.thumb];
+    if (!thumb) continue;
+    if (el.tagName === "IMG") el.src = thumb;
+    else el.style.backgroundImage = `url("${thumb}")`;
+  }
+};
 
 function dropMissingScenes(d) {
   const ids = new Set(d.scenes.map((s) => s.id));
@@ -115,9 +133,7 @@ function screensPage() {
   }
   const { main, study, done } = draft.screens;
   return [
-    ...pageHead("Screens", "Choose backgrounds for each screen. "
-      + (inWindow() ? "Changes preview in Anki as you make them, until you save."
-                    : "Enable Preview below to see changes in Anki before saving.")),
+    ...pageHead("Screens", "Choose backgrounds for each screen. Enable Preview below to see changes in Anki before saving."),
     screenCard("main", "Deck list", "Your decks, and while Anki starts",
       sceneChooser(main), lookControls(main), backdropSwitch(main)),
     screenCard("study", "Studying", "Overview, reviews and the finished screen",
@@ -130,7 +146,7 @@ function screensPage() {
         lookControls(study))),
     // Once every deck is done for today, these scenes take over both screens.
     screenCard("done", "All done for today", "Use these scenes on all screens when no cards remain.",
-      check(done.enabled, "Switch to these scenes when everything's done", (on) => { done.enabled = on; }),
+      check(done.enabled, "Use different scenes when finished", (on) => { done.enabled = on; }),
       dependent(done.enabled,
         sceneChooser(done),
         lookControls(done),
@@ -195,7 +211,8 @@ function sceneChooser(screen) {
           const scene = sceneById(id);
           const thumb = sceneThumb(scene);
           return h("span", { className: "chip" },
-            thumb ? h("img", { src: thumb, alt: "" }) : h("span", { className: "swatch" }),
+            thumb ? h("img", { src: thumb, alt: "", "data-thumb": sceneImage(scene) })
+              : h("span", { className: "swatch", "data-thumb": sceneImage(scene) }),
             h("span", { className: "chip-name", title: scene.name },
               scene.kind === "album" ? `${scene.name} (${albumPictures(scene).length})` : scene.name),
             h("button", { type: "button", "aria-label": `Remove ${scene.name}`, title: "Remove",
@@ -238,10 +255,14 @@ function scenesPage() {
                         onclick: () => addScene("day") }, "Day cycle"),
           singles.length > 1 && h("button", { type: "button", id: "combine", title: "Put single pictures in one album",
                                               onclick: () => askCombine(singles) }, "Combine pictures...")),
+        // In a narrow window, a dropdown in place of the list (CSS shows one or the other).
+        h("label", { className: "scene-select" }, h("span", {}, "Scene"),
+          h("select", { "aria-label": "Scene", onchange: (e) => { selectScene(e.target.value); render(); } },
+            draft.scenes.map((s) => h("option", { value: s.id, selected: s.id === sel }, s.name)))),
         h("div", { className: "scene-list" }, draft.scenes.map((s) =>
           h("button", { type: "button", className: "scene-item", "aria-current": s.id === sel ? "true" : "false",
                         onclick: () => { selectScene(s.id); render(); } },
-            h("span", { className: "thumb", style: bg(sceneThumb(s)) }),
+            h("span", { className: "thumb", ...thumbOf(sceneImage(s)) }),
             h("span", { className: "item-name", title: s.name }, s.name), h("small", {}, kindLabel(s))))),
         h("button", { type: "button", className: "link library-link", id: "openLibrary",
                       title: "Every picture you've added, which scenes use them, and the trash",
@@ -431,7 +452,7 @@ function askCombine(singles) {
     h("div", { className: "field" }, h("label", {}, "Album name"), name),
     h("div", { className: "combine-list" }, singles.map((sc) => h("label", { className: "check" },
       h("input", { type: "checkbox", checked: true, onchange: (e) => { e.target.checked ? picked.add(sc.id) : picked.delete(sc.id); count(); } }),
-      h("span", { className: "thumb", style: bg(sceneThumb(sc)) }), sc.name))),
+      h("span", { className: "thumb", ...thumbOf(sceneImage(sc)) }), sc.name))),
     h("div", { className: "dialog-foot" }, h("button", { type: "button", onclick: closeModal }, "Cancel"), go)));
   count();
 }
@@ -444,6 +465,7 @@ function selectScene(id) {
   sel = id;
   scrub = null;
   albumShown = 0;
+  albumFollow = true;
 }
 
 async function addScene(kind) {
@@ -497,7 +519,7 @@ function sceneEditor(scene) {
       h("span", { className: "kind" }, kindLabel(scene)),
       h("button", { type: "button", className: "danger", id: "deleteScene", onclick: () => deleteScene(scene) },
         icon("trash"), "Delete scene")),
-    preview);
+    scene.kind === "album" ? null : preview);   // an album's is in its stage (albumGrid)
   if (timed(scene)) panel.append(ribbon(scene, preview));
   panel.append(versionTable(scene, preview));
   return panel;
@@ -510,18 +532,28 @@ const timed = (scene) => scene.kind === "day" || scene.kind === "progress";
 // An album's pictures as tiles: clicking one shows it in the preview and opens the picker
 // (to place or replace it), × takes it out, and the last tile adds more.
 let albumShown = 0;
+// A newly opened album starts on the picture Anki's window shows now (albumGrid, showing).
+let albumFollow = false;
+const SCREEN_NAMES = { main: "the deck list", study: "while studying" };
+
 function albumGrid(scene, preview) {
   const folder = scene.folder;
+  let showing = {};   // picture index -> the screens showing it now
+  const select = (i) => {
+    albumShown = i;
+    tiles.forEach((t, j) => t.classList.toggle("shown", j === i));
+    updateScenePreview(preview, false);
+    drawNow();
+  };
   const tiles = scene.versions.map((v, i) => h("div", { className: "album-tile" + (i === albumShown ? " shown" : "") },
-    h("button", { type: "button", className: "pick" + (v.image ? "" : " empty"), style: bg(thumbUrl(v.image)),
-                  title: v.image, "aria-label": `Picture ${v.image}`,
+    h("button", { type: "button", className: "pick" + (v.image ? "" : " empty"), ...thumbOf(v.image),
+                  title: v.image, "aria-label": `Preview ${v.image}`,
                   onclick: () => {
-                    albumShown = i;
-                    for (const t of document.querySelectorAll(".album-tile")) t.classList.toggle("shown", t === tiles[i]);
-                    updateScenePreview(preview, false);
-                    if (folder) pickImage(v.image, () => {}, null, -1, { positionOnly: true });
+                    albumFollow = false;   // chosen here: the picture showing now doesn't take over
+                    if (v.image) select(i);
                     else pickImage(v.image, (name) => { v.image = name; changed(true); });
-                  } }, v.image ? "" : "+"),
+                  } },
+      v.image ? "" : "+"),
     // A linked album only hides a picture (it stays in the folder); another takes it out
     // (it stays in the picture library). Neither deletes anything.
     h("button", { type: "button", className: "icon-only remove" + (folder ? " hide" : ""),
@@ -533,13 +565,59 @@ function albumGrid(scene, preview) {
                     albumShown = Math.max(0, Math.min(albumShown, scene.versions.length - 1));
                     changed(true);
                   } }, icon(folder ? "hide" : "close"))));
+  // Show the picture in the preview on Anki's window now, until its screen's shuffle moves on.
+  const onScreen = albumOnScreen(scene);
+  const nowButton = h("button", { type: "button", id: "showNow", onclick: async () => {
+    nowButton.disabled = true;
+    mark(await call("show_now", { scene: scene.id, image: scene.versions[albumShown].image, cfg: draft }));
+  } }, "Show in Anki now");
+  const cropButton = h("button", { type: "button", id: "adjustCrop", onclick: () => {
+    const v = scene.versions[albumShown];
+    if (v && v.image) pickImage(v.image, () => {}, null, -1, { positionOnly: true });
+  } }, icon("crop"), "Adjust crop...");
+  // Why Show in Anki now can't be used, when it can't: said beside it, where it stays put.
+  const nowNote = h("span", { className: "help now-note" });
+  const drawNow = () => {
+    const screens = showing[albumShown];
+    nowButton.disabled = !onScreen || !!screens;
+    nowNote.textContent = !onScreen ? "To show it, use this album on a screen first (Screens page)."
+      : screens ? `Showing now on ${screens.map((k) => SCREEN_NAMES[k]).join(" and ")}.`
+      : "Until the album's next shuffle.";
+    nowButton.title = !onScreen ? "This album isn't on any screen yet" : screens ? "Already showing" : "";
+    cropButton.disabled = !(scene.versions[albumShown] || {}).image;
+  };
+  // Which picture each screen shows now: marked on its tile.
+  const mark = (res) => {
+    // An answer for tiles a redraw has replaced: the new ones asked for their own.
+    if (!res || res.error || sceneById(sel) !== scene || !tiles.length || !tiles[0].isConnected) return;
+    // By name: Anki's window may not have this page's latest numbering yet.
+    showing = {};
+    for (const [screen, shown] of Object.entries(res)) {
+      const index = shown && shown.scene === scene.id ? scene.versions.findIndex((v) => v.image === shown.image) : -1;
+      if (index >= 0) (showing[index] ||= []).push(screen);
+    }
+    tiles.forEach((t, i) => {
+      t.querySelector(".now-badge")?.remove();
+      if (showing[i]) t.append(h("span", { className: "now-badge", title: `Showing now on ${showing[i].map((k) => SCREEN_NAMES[k]).join(" and ")}` }, "Now"));
+    });
+    const first = Object.keys(showing)[0];
+    if (albumFollow && first !== undefined && Number(first) !== albumShown) select(Number(first));
+    albumFollow = false;
+    drawNow();
+  };
+  call("showing", { cfg: draft }).then(mark);
+  drawNow();
   return h("div", { className: "album-wrap" },
     folder && h("div", { className: "folder-line" },
       h("span", { className: "folder-path", title: folder.path }, shortPath(folder.path)),
       h("label", { className: "check" },
         h("input", { type: "checkbox", id: "albumSubfolders", checked: !!folder.subfolders,
                      onchange: (e) => { folder.subfolders = e.target.checked; rescanFolder(scene); } }), "Include subfolders"),
-      h("button", { type: "button", className: "link", id: "rescan", onclick: () => rescanFolder(scene) }, "Rescan now")),
+      h("button", { type: "button", className: "link", id: "rescan", onclick: () => rescanFolder(scene) }, "Rescan now"),
+      // In the system's file manager: there's no opening a folder that can't be found.
+      h("button", { type: "button", className: "link", id: "openAlbumFolder", title: folder.path,
+                    disabled: (S.missing || []).includes(scene.id),
+                    onclick: () => call("open_folder", { path: folder.path }) }, "Open folder")),
     folder && (S.missing || []).includes(scene.id)
       && h("p", { className: "error folder-missing" }, "Can't find this folder (moved, renamed, or a drive that isn't connected). Showing its last pictures."),
     folder
@@ -548,16 +626,26 @@ function albumGrid(scene, preview) {
           + "or on Rescan now. Hiding a picture takes it out of this album only. On a screen, the album's pictures "
           + "take turns with its other scenes, one each time its shuffle changes.")
       : help("On a screen, the album's pictures take turns with its other scenes, one each time its shuffle changes."),
+    // The picture chosen below, and what to do with it: in view while the tiles scroll under it.
+    h("div", { className: "album-stage" }, preview,
+      h("div", { className: "album-actions" }, nowButton, cropButton, nowNote)),
     h("div", { className: "album" }, ...tiles,
       !folder && h("button", { type: "button", className: "album-add", onclick: () => addImagesToAlbum(scene) }, "+ Add images...")),
     // Hidden pictures (still in the folder), folded away: each can come back.
     folder && (folder.hidden || []).length > 0 && disclosure(`hidden:${scene.id}`, `Hidden pictures (${folder.hidden.length})`,
       h("div", { className: "hidden-row" }, folder.hidden.map((name) => h("div", { className: "hidden-tile", title: name },
-        h("span", { className: "lib-thumb", style: bg(thumbUrl(name)) }),
+        h("span", { className: "lib-thumb", ...thumbOf(name) }),
         h("button", { type: "button", className: "lib-action show", onclick: () => {
           folder.hidden = folder.hidden.filter((n) => n !== name);
           rescanFolder(scene);   // back in its place in the folder's order
         } }, "Show"))))));
+}
+
+// Whether a screen uses this album (the deck list, studying, or all done).
+function albumOnScreen(scene) {
+  const { main, study, done } = draft.screens;
+  return main.scenes.includes(scene.id) || (done.enabled && done.scenes.includes(scene.id))
+    || (study.enabled && !study.same_as_main && study.scenes.includes(scene.id));
 }
 
 function versionTable(scene, preview) {
@@ -589,7 +677,7 @@ function versionTable(scene, preview) {
 }
 
 function pickButton(v, scene = null, index = -1) {
-  return h("button", { type: "button", className: "pick" + (v.image ? "" : " empty"), style: bg(thumbUrl(v.image)),
+  return h("button", { type: "button", className: "pick" + (v.image ? "" : " empty"), ...thumbOf(v.image),
                        title: v.image ? `Change image (${v.image})` : "Choose image",
                        "aria-label": v.image ? `Change image (${v.image})` : "Choose image",
                        onclick: () => pickImage(v.image, (name) => { v.image = name; changed(true); }, scene, index) },
@@ -696,12 +784,14 @@ function versionRow(scene, v, i, preview) {
         } })),
       follows && h("span", { className: "unit labelled wait" }, "Delay",
         h("span", { className: "unit" }, minutes("offset", "Delay in minutes", (n) => { v.offset = n; }), "min")));
-    fade = cell("Transition ends", "when-end", clock || follows
-      ? h("span", { className: "unit labelled length" }, "Transition duration",
-          h("span", { className: "unit" }, minutes("fade", "Transition duration in minutes", (n) => { v.fade = n; }), "min"))
-      : h("select", { "aria-label": "Transition ends", onchange: (e) => { v.to = Number(e.target.value.split(":")[1]); changed(true); } },
+    // A set time, or after the version above: the transition's length, and when it ends under it.
+    fade = clock || follows
+      ? cell("Transition duration", "when-end", h("span", { className: "unit" },
+          minutes("fade", "Transition duration in minutes", (n) => { v.fade = n; }), "min"))
+      : cell("Transition ends", "when-end", h("select", { "aria-label": "Transition ends", onchange: (e) => { v.to = Number(e.target.value.split(":")[1]); changed(true); } },
           half(direction).filter(after).map((m) => momentOption(m, direction, m.degrees === to)),
           moments.length > 0 && !isMoment(direction, to) && customOption(direction, to)));
+    if (clock || follows) fade.classList.add("duration");
   } else {
     starts = cell("Starts at", null, num("at", 0, 100, "% done", "Starts at percent done"));
     fade = cell("Fades in over", null, num("fade", 0, 100, "%", "Fade-in percent"));
@@ -715,7 +805,10 @@ function versionRow(scene, v, i, preview) {
                       updateScenePreview(preview, false);
                     } },
     pickButton(v, scene, i),
-    versionName(scene, v, i),
+    h("div", { className: "vtitle" }, versionName(scene, v, i),
+      h("button", { type: "button", className: "link preview-transition", title: "Play this transition in the preview",
+                    "aria-label": `Preview the transition to ${v.label || "this version"}`,
+                    onclick: () => previewTransition(scene, preview, i) }, icon("play"), "Preview")),
     starts, fade,
     h("button", { type: "button", className: "icon-only c-remove", title: "Remove version", "aria-label": "Remove version",
                   onclick: () => { scene.versions.splice(i, 1); changed(true); } }, icon("close")));
@@ -785,7 +878,8 @@ function play(scene, preview) {
     const from = currentPosition(scene);
     run = day ? { pos: from, end: from + 1440 } : { pos: from < 100 ? from : 0, end: 100 };
   }
-  const perMs = span / (playSeconds * 1000);
+  // A version's transition (previewTransition) takes its own time, and stays where it ends.
+  const perMs = run.perMs || span / (playSeconds * 1000);
   let last = performance.now();
   let busy = false;
   setPlayButton(scene, true);
@@ -799,13 +893,36 @@ function play(scene, preview) {
       busy = true;
       // Back where it started: a day hands back to "now".
       // Fractional, so a slow run moves smoothly instead of a minute at a time.
-      scrub = done && day ? null : day ? run.pos % 1440 : Math.min(run.pos, 100);
+      scrub = done && day && !run.perMs ? null : day ? ((run.pos % 1440) + 1440) % 1440 : Math.min(run.pos, 100);
       updateScenePreview(preview, false).then(() => { busy = false; });
     }
     if (done) { run = null; pausePlaying(); }
     else playing.frame = requestAnimationFrame(step);
   };
   playing.frame = requestAnimationFrame(step);
+}
+
+// One version's transition, in the preview: brought into view, and played from a little before
+// it starts to when it's fully in, in a few seconds (however long the transition is).
+const TRANSITION_PLAY_MS = 4000;
+function previewTransition(scene, preview, i) {
+  const v = scene.versions[i];
+  let from, to;
+  if (scene.kind === "day") {
+    const mark = (S.marks || []).find((m) => m.index === i);
+    if (!mark) return;
+    const lead = Math.min(20, Math.max(5, mark.fade / 4));
+    from = mark.start - lead;
+    to = mark.start + mark.fade + lead;
+  } else {
+    from = Math.max(0, Number(v.at) || 0);
+    to = Math.min(100, from + (Number(v.fade) || 0) + 2);
+    from = Math.max(0, from - 2);
+  }
+  stopPlaying();
+  preview.scrollIntoView({ behavior: "smooth", block: "start" });
+  run = { pos: from, end: to, perMs: (to - from) / TRANSITION_PLAY_MS };
+  play(scene, preview);
 }
 
 function pausePlaying() {
@@ -865,7 +982,7 @@ function drawRibbon(wrap, res, scene) {
   const pct = (x) => (100 * x) / span;
   const add = (image, a, b, z, fade) => {
     if (b <= a || b <= 0) return;
-    const seg = h("div", { className: "seg", style: Object.assign(bg(thumbUrl(image)), {
+    const seg = h("div", { className: "seg", "data-thumb": image, style: Object.assign(bg(thumbUrl(image)), {
       left: pct(a) + "%", width: pct(b - a) + "%", zIndex: String(z) }) });
     if (fade > 0) seg.style.maskImage = `linear-gradient(to right, transparent, black ${(100 * fade) / (b - a)}%)`;
     box.prepend(seg);
@@ -948,8 +1065,12 @@ function updateScenePreview(preview, redrawRibbon) {
       for (const [index, start, end] of cycleTimes(res.marks)) {
         const row = document.querySelector(`.version[data-index="${index}"]`);
         if (!row) continue;
-        row.querySelector(".when-start").textContent = dayAndTime(start);
-        row.querySelector(".when-end").textContent = dayAndTime(end);
+        // Under a duration, the start and end it makes say which: "Starts next day, 00:41",
+        // "Ends next day, 02:11" (under the dropdowns, the column heads do).
+        const said = (word, minutes) => word + " " + dayAndTime(minutes).replace(/^\w/, (c) => c.toLowerCase());
+        const duration = !!row.querySelector(".c-end.duration");
+        row.querySelector(".when-start").textContent = duration ? said("Starts", start) : dayAndTime(start);
+        row.querySelector(".when-end").textContent = duration ? said("Ends", end) : dayAndTime(end);
       }
     }
     if (wrap && redrawRibbon) drawRibbon(wrap, res, scene);
@@ -1305,12 +1426,32 @@ function dayPage() {
             time("sunrise", "Fallback sunrise"), time("sunset", "Fallback sunset"),
             note(help("For days the sun doesn't rise or set here.")))))),
     lightPanel(),
-    h("section", { className: "panel aligned day-panel" },
+  ];
+}
+
+// -- General page ---------------------------------------------------------
+// What applies to every screen and scene alike.
+
+function generalPage() {
+  return [
+    ...pageHead("General", "Settings that apply to every screen and scene."),
+    h("section", { className: "panel aligned general-panel" },
       h("h2", {}, "Transitions"),
       slider("Crossfade duration", draft.transition_seconds, 0, 10, " s", (v) => { draft.transition_seconds = v; }),
       note(help("Blend between backgrounds when switching screens or shuffling scenes.",
         "Also when a scene or its settings change. A day-cycle scene moves between its versions at its own pace "
         + "instead: the transition times set for each version on the Scenes page."))),
+    // Every screen's pictures: big ones from a copy sized for the screen (display.py).
+    h("section", { className: "panel performance" },
+      h("h2", {}, "Performance"),
+      check(!!draft.display_copies, "Optimize large backgrounds", (on) => { draft.display_copies = on; }),
+      help("Use smaller copies of large images to improve performance. Unblurred backgrounds may look slightly softer.",
+        "Blurred backgrounds always use smaller copies, the more blur the smaller: the blur hides the difference. "
+        + "The previews here always use copies too. Copies are kept in the add-on's user_files/display folder, up to "
+        + "1 GB, and your pictures are never changed. Animated pictures are always shown as they are."),
+      // Anki's own setting (Preferences > Appearance), which the add-on can't change for you.
+      h("p", { className: "help video-driver" }, "Seeing lag or stuttering? Try Anki's Tools > Preferences > Appearance > "
+        + "Video driver: OpenGL, then restart Anki.")),
   ];
 }
 
@@ -1457,27 +1598,41 @@ Kiso.setup({
     },
     {
       id: "day", title: "Day & time", icon: "day", render: dayPage,
-      slice: (d) => [d.day, d.transition_seconds, d.light],
-      revert: (d) => { d.day = clone(saved.day); d.transition_seconds = saved.transition_seconds; d.light = clone(saved.light); },
+      slice: (d) => [d.day, d.light],
+      revert: (d) => { d.day = clone(saved.day); d.light = clone(saved.light); },
       restoreLabel: "Reset Day & time settings",
-      restoreTitle: "Sunrise and sunset, light and crossfade back to their defaults. Nothing changes until Save.",
+      restoreTitle: "Sunrise and sunset, and light, back to their defaults. Nothing changes until Save.",
       restore: (d) => {
         d.day = clone(S.defaults.day);
-        d.transition_seconds = S.defaults.transition_seconds;
         d.light = clone(S.defaults.light);
+      },
+    },
+    {
+      id: "general", title: "General", icon: "general", render: generalPage,
+      slice: (d) => [d.transition_seconds, d.display_copies],
+      revert: (d) => { d.transition_seconds = saved.transition_seconds; d.display_copies = saved.display_copies; },
+      restoreLabel: "Reset general settings",
+      restoreTitle: "Crossfade duration and Optimize large backgrounds back to their defaults. Nothing changes until Save.",
+      restore: (d) => {
+        d.transition_seconds = S.defaults.transition_seconds;
+        d.display_copies = S.defaults.display_copies;
       },
     },
   ],
   // Whether unsaved edits show in Anki's window, beside the unsaved-changes status. A slow
   // computer can keep Anki's window out of it: it then changes only on Save.
-  footer: () => h("label", { className: "check in-window",
-                             title: "Show unsaved edits, and moments you pick on a timeline, in Anki's main window as you make them" },
-    h("input", { type: "checkbox", id: "in-window", checked: true, onchange: (e) => {
-      S.in_window = e.target.checked;
-      call("in_window", S.in_window).then(() => changed(true));   // sends the draft and moments again
-    } }), "Preview in Anki's window"),
+  // The add-on's version above it, stacked (as Tsunagi has it).
+  footer: () => h("div", { className: "about" },
+    h("span", { id: "version", className: "addon-version" }),
+    h("label", { className: "check in-window",
+                 title: "Show unsaved edits, and moments you pick on a timeline, in Anki's main window as you make them" },
+      h("input", { type: "checkbox", id: "in-window", checked: true, onchange: (e) => {
+        S.in_window = e.target.checked;
+        call("in_window", S.in_window).then(() => changed(true));   // sends the draft and moments again
+      } }), "Preview in Anki's window")),
   onLoad: (state) => {
     document.getElementById("in-window").checked = state.in_window !== false;
+    document.getElementById("version").textContent = state.version ? `Keshiki ${state.version}` : "";
     S.anchors = { sunrise: 390, sunset: 1170 };
     S.window = S.window || [16, 10];
     document.documentElement.style.setProperty("--kk-window", String(S.window[0] / S.window[1]));

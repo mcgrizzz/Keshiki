@@ -163,3 +163,66 @@ def test_moments_name_the_sun_with_todays_times():
     assert [m["key"] for m in moments][:4] == ["night-ends", "first-light", "dawn", "sunrise"]
     assert abs(by_key["sunrise"]["time"] - 390) <= 6 and abs(by_key["sunset"]["time"] - 1170) <= 6
     assert by_key["first-light"]["time"] < by_key["dawn"]["time"] < by_key["sunrise"]["time"] < by_key["noon"]["time"]
+
+
+def test_previews_use_copies_and_anki_s_window_on_a_blurred_screen(monkeypatch):
+    monkeypatch.setattr(library, "image_url", lambda name: "/img/" + name)
+    b = bridge()
+    b.renderer.display = SimpleNamespace(url=lambda name, k=1: f"/copy-{k}/{name}")
+    b.renderer.refresh = lambda: None
+    cfg = migrate({})[0]
+    cfg["scenes"] = [{"id": "s", "name": "S", "kind": "single", "versions": [{"label": "", "image": "p.jpg"}]}]
+    cfg["screens"]["main"]["scenes"] = ["s"]
+    scene = cfg["scenes"][0]
+    # The previews: copies either way.
+    assert send(b, "look", {"cfg": cfg, "screen": "main"})["layers"][0]["src"] == "/copy-1/p.jpg"
+    moment = {"scene": scene, "position": 0, "show": True, "cfg": cfg}
+    assert send(b, "compose", moment)["layers"][0]["src"] == "/copy-1/p.jpg"
+    # A moment in Anki's window: a copy, unblurred too unless that's turned off; blurred, a copy
+    # sized for the blur.
+    assert cfg["display_copies"] is True
+    assert b.renderer.scene_look["layers"][0]["src"] == "/copy-1/p.jpg"
+    cfg["display_copies"] = False   # the picture itself, unblurred
+    send(b, "compose", moment)
+    assert b.renderer.scene_look["layers"][0]["src"] == "/img/p.jpg"
+    cfg["screens"]["main"]["blur"] = 8
+    send(b, "compose", moment)
+    assert b.renderer.scene_look["layers"][0]["src"] == "/copy-4/p.jpg"
+
+
+def test_the_page_gets_the_version_a_build_marked(tmp_path, monkeypatch):
+    monkeypatch.setattr(library, "ADDON_DIR", tmp_path)
+    assert settings_page.addon_version() == ""   # the source tree: no manifest, or none marked
+    (tmp_path / "manifest.json").write_text(json.dumps({"package": "keshiki", "human_version": "0.3.0"}))
+    assert settings_page.addon_version() == "0.3.0"
+
+
+def test_open_folder_opens_the_library_or_a_linked_albums_folder(tmp_path, monkeypatch):
+    monkeypatch.setattr(library, "IMAGES", tmp_path / "images")
+    opened = []
+    b = SettingsBridge(SimpleNamespace(addonManager=FakeManager(), col=None), FakeRenderer(), open_folder=opened.append)
+    send(b, "open_folder")
+    assert opened == [tmp_path / "images"] and library.IMAGES.is_dir()
+    send(b, "open_folder", {"path": str(tmp_path)})
+    assert opened[-1] == tmp_path
+    assert send(b, "open_folder", {"path": str(tmp_path / "gone")}) == {"error": "Can't find this folder."}
+    assert len(opened) == 2
+
+
+def test_show_now_puts_an_albums_picture_on_screen():
+    cfg = migrate({})[0]
+    cfg["scenes"] = [{"id": "a", "name": "A", "kind": "album", "versions": [{"label": "", "image": "p.jpg"},
+                                                                           {"label": "", "image": "q.jpg"}]}]
+    cfg["screens"]["main"].update(scenes=["a"], every=60)
+    b = bridge()
+    now, offset = settings_page._now()
+    b.renderer.chosen = None
+    b.renderer.active_config = lambda: cfg   # what Anki's window shows from
+    b.renderer.choose = lambda scene, image: setattr(b.renderer, "chosen", {
+        "scene": scene, "image": image, "at": int(now.timestamp() / 60 + offset)})
+    before = send(b, "showing", {"cfg": cfg})
+    assert before["main"]["scene"] == "a" and before["study"] == before["main"]   # Studying follows the deck list
+    other = "q.jpg" if before["main"]["image"] == "p.jpg" else "p.jpg"
+    assert send(b, "show_now", {"scene": "a", "image": other, "cfg": cfg}) == {
+        "main": {"scene": "a", "image": other}, "study": {"scene": "a", "image": other}}
+    assert send(b, "look", {"cfg": cfg, "screen": "main"})["layers"][0]["image"] == other

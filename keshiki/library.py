@@ -26,9 +26,10 @@ IMAGES = ADDON_DIR / "user_files" / "images"
 THUMBS = ADDON_DIR / "user_files" / "thumbs"
 FOLDERS = ADDON_DIR / "user_files" / "folders"
 TRASH = ADDON_DIR / "user_files" / "trash"
+DISPLAY = ADDON_DIR / "user_files" / "display"
 EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".bmp")
 # Served by Anki's media server under /_addons/<folder>/ (see setWebExports in the root __init__).
-WEB_EXPORTS = r"user_files/(images|thumbs|folders|trash)/.+"
+WEB_EXPORTS = r"user_files/(images|thumbs|folders|trash|display)/.+"
 THUMB_WIDTH = 480
 
 
@@ -47,7 +48,10 @@ def image_url(name: str) -> str:
 
 
 def picture_info(name: str) -> Dict[str, str]:
-    return {"name": name, "url": image_url(name), "thumb": thumb_url(name)}
+    """A linked picture for the settings page. Its thumbnail may not be made yet (it's made in
+    the background): then "" (the page fills it in later), never the picture itself."""
+    made = (THUMBS / _thumb_name(name)).exists()
+    return {"name": name, "url": image_url(name), "thumb": thumb_url(name) if made else ""}
 
 
 def thumb_url(name: str) -> str:
@@ -84,8 +88,9 @@ def import_files(paths: List[str]) -> List[str]:
 
 
 def delete(name: str, folder: Optional[Path] = None) -> None:
-    """Delete a picture for good, with its thumbnail and measurements."""
+    """Delete a picture for good, with its thumbnail, measurements and display copies."""
     _stats.pop(name, None)
+    remove_display(name)
     for path in ((folder or IMAGES) / _safe_name(name), *_caches(name)):
         if path.is_file():
             path.unlink()
@@ -112,6 +117,7 @@ def _move(src: Path, folder: Path) -> str:
     """Move a picture (and its caches) into `folder`, renamed if the name is taken there."""
     folder.mkdir(parents=True, exist_ok=True)
     dest = _free(folder, src.name)
+    remove_display(src.name)   # made again when it shows
     shutil.move(str(src), str(dest))
     if dest.name != src.name:
         _stats.pop(src.name, None)
@@ -309,6 +315,195 @@ def _stats_name(name: str) -> str:
 
 def _lights_name(name: str) -> str:
     return _cache_name(name) + ".lights.png"
+
+
+# -- display copies ------------------------------------------------------------
+# A picture straight from a camera or a 4K wallpaper can be many times the window's size, and
+# every webview showing it decodes all of it (about 100 MB for 24 megapixels; each crossfade to
+# it stalls while it does). A copy that just covers the screen costs a fraction of that. It isn't
+# quite the same: Chromium shrinks a big picture with crisp sampling, and a copy resampled
+# twice (here, then by Chromium to the window) shows visibly softer fine detail, whatever its
+# format or size (measured: about half the detail of a 4K picture on a 1440p screen). So the
+# settings' small previews always use copies, and Anki's window only on a blurred screen, where
+# the blur hides the difference (schedule.BLUR_COPIES).
+# Copies are made on a worker thread (display.py says when) and kept in user_files/display
+# like a cache: any of them can go, and it's made again when it's needed.
+
+# The screens copies are made to cover (device pixels): the smallest of these that covers the
+# largest screen. Fixed steps, so a slightly different window or screen reuses the same copies.
+DISPLAY_BOXES = ((1920, 1080), (2560, 1440), (3840, 2160), (5120, 2880))
+# Only a copy at most this fraction of the picture's width is worth having.
+DISPLAY_MAX_SCALE = 0.8
+DISPLAY_QUALITY = 92
+DISPLAY_BUDGET = 1 << 30   # bytes; the copies used least lately go past this
+# <picture>.<box>.<stamp>[.<backdrop>].jpg: a see-through picture's copy is laid on the colour
+# that shows through it (the stage's background, the theme's canvas), so it names that colour.
+_DISPLAY_FILE = re.compile(r"\.(\d+)x(\d+)\.[0-9a-f]{8}(\.[0-9a-f]{6})?\.jpg$")
+_HEX = re.compile(r"#?([0-9a-fA-F]{6})")
+
+
+def display_box(w: float, h: float) -> Optional[tuple]:
+    """The smallest box in DISPLAY_BOXES covering w x h, or None when none does."""
+    return next(((bw, bh) for bw, bh in DISPLAY_BOXES if bw >= w and bh >= h), None)
+
+
+def display_size(w: int, h: int, box: tuple) -> Optional[tuple]:
+    """A w x h picture scaled down to just cover box (as the stage's "cover" does), if that's
+    clearly smaller than the picture."""
+    scale = max(box[0] / w, box[1] / h)
+    if scale > DISPLAY_MAX_SCALE:
+        return None
+    return max(1, math.ceil(w * scale - 1e-6)), max(1, math.ceil(h * scale - 1e-6))
+
+
+def display_name(name: str, box: tuple) -> Optional[str]:
+    """The name (without its ending) a picture's copy for box is kept under: it names the
+    picture's size and time, so a picture changed in place (or another one under the same name
+    later) gets a copy of its own. None when the picture can't be found."""
+    try:
+        st = image_path(name).stat()
+    except OSError:
+        return None
+    stamp = hashlib.sha1(f"{name}|{st.st_size}-{int(st.st_mtime)}".encode()).hexdigest()[:8]
+    return f"{_cache_name(name)}.{box[0]}x{box[1]}.{stamp}"
+
+
+def backdrop_hex(color: Optional[str]) -> Optional[str]:
+    """"#2C2C2C" -> "2c2c2c" (None for anything else)."""
+    m = _HEX.fullmatch((color or "").strip())
+    return m.group(1).lower() if m else None
+
+
+def display_file(base: str, backdrop: Optional[str]) -> Optional[str]:
+    """The copy made under that name (display_name), if there is one: the picture's own, or one
+    laid on the backdrop colour (a see-through picture)."""
+    names = [base + ".jpg"] + ([f"{base}.{backdrop}.jpg"] if backdrop else [])
+    return next((n for n in names if (DISPLAY / n).is_file()), None)
+
+
+def display_url(file: str) -> str:
+    return f"/_addons/{ADDON_DIR.name}/user_files/display/{quote(file)}"
+
+
+def still(path: Path) -> bool:
+    """Whether a picture is a still image Qt can resize: animated GIFs, PNGs (APNG) and
+    WebPs are shown as they are, and so are formats Qt can't read (AVIF)."""
+    suffix = path.suffix.lower()
+    if suffix in (".jpg", ".jpeg", ".bmp"):
+        return True
+    try:
+        with path.open("rb") as f:
+            head = f.read(64)
+            if suffix == ".webp":
+                # An extended WebP's flags say whether it's animated.
+                return head[:4] == b"RIFF" and head[8:12] == b"WEBP" and not (head[12:16] == b"VP8X" and head[20] & 0x02)
+            if suffix == ".png" and head[:8] == b"\x89PNG\r\n\x1a\n":
+                # An animated PNG has an acTL chunk before its first image data.
+                f.seek(8)
+                while True:
+                    chunk = f.read(8)
+                    if len(chunk) < 8 or chunk[4:] in (b"IDAT", b"IEND"):
+                        return True
+                    if chunk[4:] == b"acTL":
+                        return False
+                    f.seek(int.from_bytes(chunk[:4], "big") + 4, 1)
+    except OSError:
+        pass
+    return False
+
+
+def make_display(name: str, box: tuple, backdrop: Optional[str] = None) -> Optional[str]:
+    """Make the picture's copy for box (any thread) and return its file name, or None when the
+    picture is better shown as it is: animated, unreadable, not much bigger than the box, or in
+    colours other than RGB (CMYK). A see-through picture is laid on `backdrop` (hex, the colour
+    showing through it: the theme's canvas), or gets no copy without one."""
+    from aqt.qt import QColor, QColorSpace, QImage, QImageReader, QPainter, Qt
+
+    path, base = image_path(name), display_name(name, box)
+    if base is None or not still(path):
+        return None
+    if display_file(base, backdrop):
+        return display_file(base, backdrop)
+    reader = QImageReader(str(path))
+    reader.setAutoTransform(True)   # a phone photo's rotation, as Chromium shows it
+    image = reader.read()
+    if image.isNull() or image.format() == getattr(QImage.Format, "Format_CMYK8888", None):
+        return None
+    size = display_size(image.width(), image.height(), box)
+    if size is None:
+        return None
+    image = image.scaled(*size, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation)
+    file = base + ".jpg"
+    if image.hasAlphaChannel():
+        alpha = image.convertToFormat(QImage.Format.Format_Alpha8)
+        bits, line, w = bytes(alpha.constBits().asarray(alpha.sizeInBytes())), alpha.bytesPerLine(), alpha.width()
+        if any(min(bits[y * line:y * line + w]) < 255 for y in range(alpha.height())):
+            # See-through: what shows through it is the stage's background, so lay it on that.
+            if not backdrop:
+                return None
+            if image.colorSpace().isValid() and image.colorSpace() != QColorSpace(QColorSpace.NamedColorSpace.SRgb):
+                image = image.convertedToColorSpace(QColorSpace(QColorSpace.NamedColorSpace.SRgb))   # the backdrop's
+            flat = QImage(image.size(), QImage.Format.Format_RGB32)
+            flat.fill(QColor("#" + backdrop))
+            painter = QPainter(flat)
+            painter.drawImage(0, 0, image)
+            painter.end()
+            flat.setColorSpace(QColorSpace(QColorSpace.NamedColorSpace.SRgb))
+            image, file = flat, f"{base}.{backdrop}.jpg"
+        else:
+            image = image.convertToFormat(QImage.Format.Format_RGB32)
+    DISPLAY.mkdir(parents=True, exist_ok=True)
+    part = DISPLAY / (file + ".part")
+    # The colour profile goes with it (Qt keeps it), so it's shown in the same colours.
+    if not image.save(str(part), "JPG", DISPLAY_QUALITY):
+        part.unlink(missing_ok=True)
+        return None
+    os.replace(part, DISPLAY / file)   # whole, or not there: the page may ask for it any time
+    return file
+
+
+def remove_display(name: str) -> None:
+    """Delete a picture's display copies (any size, any version of it)."""
+    if not DISPLAY.is_dir():
+        return
+    prefix = _cache_name(name) + "."
+    for path in DISPLAY.iterdir():
+        if path.name.startswith(prefix) and _DISPLAY_FILE.fullmatch(path.name[len(prefix) - 1:]):
+            _unlink(path)
+
+
+def prune_display(budget: int = DISPLAY_BUDGET) -> int:
+    """Keep the copies within budget, dropping those used least lately (display.py touches a
+    copy when it's first used in a session); how many went. Leftover .part files go too."""
+    if not DISPLAY.is_dir():
+        return 0
+    files, gone = [], 0
+    for path in DISPLAY.iterdir():
+        try:
+            st = path.stat()
+        except OSError:
+            continue
+        if path.name.endswith(".part"):
+            _unlink(path)
+        else:
+            files.append((st.st_mtime, st.st_size, path))
+    total = sum(size for _, size, _ in files)
+    for _, size, path in sorted(files):
+        if total <= budget:
+            break
+        if _unlink(path):
+            total -= size
+            gone += 1
+    return gone
+
+
+def _unlink(path: Path) -> bool:
+    """Delete a copy; one that can't go now (in use on Windows) goes another time."""
+    try:
+        path.unlink(missing_ok=True)
+        return True
+    except OSError:
+        return False
 
 
 # -- linked folders ----------------------------------------------------------

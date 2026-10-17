@@ -34,7 +34,7 @@ def check(app, shots, base):
         dlg = make_dialog(mw, renderer)
         dlg.kiso_bridge.pick_files = lambda: files
         # No network in checks: the location lookup answers at once.
-        dlg.kiso_bridge.in_background = lambda fn, done: done(
+        dlg.kiso_bridge.in_background = lambda fn, done, **_: done(
             {"latitude": 35.68, "longitude": 139.65, "place": "Tokyo, Japan"})
         dlg.show()
         until(app, lambda: js(app, dlg.kiso_web, "window.kisoReady === true"), 15, "settings page never loaded")
@@ -62,17 +62,49 @@ def check(app, shots, base):
     shoot(dlg, "screens")
     print("PASS: first images become an album on the deck list and preview live.")
 
-    # The album on the Scenes page: its pictures as tiles; a tile shows in the preview and
-    # opens the picker; × takes one out.
+    # The album on the Scenes page: its pictures as tiles. It opens on the picture Anki's window
+    # shows now (marked Now); a tile shows in the preview; its crop button opens the crop; Show in
+    # Anki now puts the previewed one on screen; × takes one out.
     run_js(dlg, "byText('#nav button', 'Scenes').click()")
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 4, 5, "the album's pictures aren't tiles")
     assert run_js(dlg, "$('.editor .kind').textContent") == "Album · 4 pictures"
     assert run_js(dlg, "!$('.ribbon') && !$('#play')"), "an album has no timeline"
-    run_js(dlg, "$$('.album-tile .pick')[2].click()")
-    until(app, lambda: run_js(dlg, "!!$('.tile')"), 5, "the tile didn't open the picker")
-    until(app, lambda: run_js(dlg, "$$('.preview .keshiki-layer').filter(e => !e.dataset.leaving)"
-                                   ".map(e => e.dataset.src.split('/').pop())") == ["dusk.png"], 5,
-          "the preview doesn't show the tile's picture")
+    previewed = ("$$('.preview .keshiki-layer').filter(e => !e.dataset.leaving)"
+                 ".map(e => e.dataset.src.split('/').pop())")
+    until(app, lambda: run_js(dlg, "$$('.album-tile .now-badge').length") == 1, 5, "no Now on the picture showing")
+    showing = renderer.shown["layers"][0]["image"]
+    assert run_js(dlg, "$('.album-tile.shown .now-badge') && draft.scenes[0].versions[albumShown].image") == showing
+    until(app, lambda: run_js(dlg, previewed) == [showing], 5, "the album didn't open on the picture showing now")
+    assert run_js(dlg, "$('#showNow').disabled"), "Show in Anki now offered for the picture already showing"
+    other = 2 if showing != "dusk.png" else 1
+    want = run_js(dlg, f"draft.scenes[0].versions[{other}].image")
+    run_js(dlg, f"$$('.album-tile .pick')[{other}].click()")
+    until(app, lambda: run_js(dlg, previewed) == [want], 5, "the preview doesn't show the tile's picture")
+    assert run_js(dlg, "!$('#modal .dialog')"), "clicking a tile opened a dialog"
+    assert run_js(dlg, "!$('.album-tile .adjust')"), "a crop button on the tiles"
+    run_js(dlg, "$('#adjustCrop').click()")
+    until(app, lambda: run_js(dlg, "!!$('.position-dialog')"), 5, "Adjust crop... didn't open the crop")
+    run_js(dlg, "$('.position-dialog .primary').click()")
+    run_js(dlg, "$('#showNow').click()")
+    until(app, lambda: (renderer.shown or {}).get("layers", [{}])[0].get("image") == want, 5,
+          "Show in Anki now didn't reach Anki's window")
+    until(app, lambda: run_js(dlg, f"!!$$('.album-tile')[{other}].querySelector('.now-badge') && $('#showNow').disabled"), 5,
+          "the Now mark didn't move")
+    assert run_js(dlg, "$('.now-note').textContent").startswith("Showing now on the deck list"), \
+        run_js(dlg, "$('.now-note').textContent")
+    shoot(dlg, "album-now")
+    # Taking a picture out renumbers the rest: Show in Anki now still shows the one picked, even
+    # before Anki's window has the edit.
+    removed = run_js(dlg, "draft.scenes[0].versions[0].image")
+    run_js(dlg, "$$('.album-tile .remove')[0].click()")
+    names = run_js(dlg, "draft.scenes[0].versions.map(v => v.image)")
+    pick = next(i for i in range(len(names) - 1, -1, -1) if names[i] != renderer.shown["layers"][0]["image"])
+    run_js(dlg, f"$$('.album-tile .pick')[{pick}].click(); $('#showNow').click()")
+    until(app, lambda: renderer.shown["layers"][0]["image"] == names[pick], 5,
+          f"Show in Anki now showed {renderer.shown['layers'][0]['image']}, not {names[pick]}")
+    until(app, lambda: run_js(dlg, f"!!$$('.album-tile')[{pick}].querySelector('.now-badge')"), 5, "Now isn't on it")
+    run_js(dlg, f"draft.scenes[0].versions.unshift({{ label: '', image: {removed!r} }}); changed(true)")
+    until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 4, 5)
     # The cause of that once: a look asked for while a new stage's first fade waits for its first
     # frame wins; the waiting one is dropped, not laid over it afterwards.
     run_js(dlg, """(() => { const box = document.createElement('div'); document.body.append(box); window._stBox = box;
@@ -83,13 +115,41 @@ def check(app, shots, base):
     assert run_js(dlg, "[..._stBox.querySelectorAll('.keshiki-layer')].filter(e => !e.dataset.leaving)"
                        ".map(e => e.dataset.src.split('/').pop())") == ["dusk.png"], "a look waiting for a frame won"
     run_js(dlg, "_stBox.remove()")
-    run_js(dlg, "$('#modal .dialog-foot button').click()")
     run_js(dlg, "$$('.album-tile .remove')[3].click()")
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 3, 5)
     run_js(dlg, "const a = draft.scenes[0]; a.versions.push({ label: '', image: 'night.png' }); changed(true)")
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 4, 5)
+    # A long album: scrolled down to its last tiles, the preview and its buttons stay in view,
+    # and a tile chosen there shows in it with the tiles left where they were.
+    run_js(dlg, "const a = draft.scenes[0]; for (let i = 0; i < 40; i++) a.versions.push({ label: '', image: "
+                "['dawn.png', 'day.png', 'dusk.png', 'night.png'][i % 4] }); changed(true)")
+    until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 44, 5)
+    run_js(dlg, "$('main').scrollTop = $('main').scrollHeight")
+    pump(app, 0.4)
+    last = run_js(dlg, "$$('.album-tile').length - 2")
+    want = run_js(dlg, f"draft.scenes[0].versions[{last}].image")
+    top = run_js(dlg, "$('main').scrollTop")
+    run_js(dlg, f"$$('.album-tile .pick')[{last}].click()")
+    until(app, lambda: run_js(dlg, previewed) == [want], 5, "the preview doesn't show the tile chosen down the album")
+    assert run_js(dlg, "$('main').scrollTop") == top > 0, "choosing a tile moved the tiles"
+    assert run_js(dlg, """(() => { const m = $('main').getBoundingClientRect(), inView = (e) => { const r = e.getBoundingClientRect();
+        return r.top >= m.top - 1 && r.bottom <= m.bottom + 1
+               && document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2).closest('.album-stage') !== null; };
+        return inView($('.album-stage .preview')) && inView($('#showNow')) && inView($('#adjustCrop')); })()"""), \
+        "the album's preview and buttons scrolled away"
+    shoot(dlg, "album-scrolled")
+    run_js(dlg, "draft.scenes[0].versions.splice(4); albumShown = 0; changed(true); $('main').scrollTop = 0")
+    until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 4, 5)
+    # Not on any screen: Show in Anki now says why it can't.
+    run_js(dlg, "window._mainScenes = draft.screens.main.scenes; draft.screens.main.scenes = []; changed(true)")
+    until(app, lambda: run_js(dlg, "$('#showNow').disabled && $('.now-note').textContent.includes('use this album on a screen')"),
+          5, "no reason given for Show in Anki now being off")
+    run_js(dlg, "draft.screens.main.scenes = window._mainScenes; changed(true)")
+    until(app, lambda: run_js(dlg, "$('.now-note').textContent") != "" and not run_js(
+        dlg, "$('.now-note').textContent.includes('use this album')"), 5)
     shoot(dlg, "album")
-    print("PASS: an album shows its pictures as tiles; each previews, opens the picker, or comes out.")
+    print("PASS: an album opens on the picture showing now (marked Now); a tile previews, Adjust crop... opens the crop, "
+          "Show in Anki now puts it on screen (or says why it can't), both stay in view down a long album, and × takes one out.")
 
     # A day cycle from the template, one image per version.
     run_js(dlg, "byText('#nav button', 'Scenes').click()")
@@ -275,14 +335,29 @@ def check(app, shots, base):
         assert run_js(dlg, f"{day_scene}.versions[3].label") == label, finish
         assert run_js(dlg, f"{starts}.selectedOptions[0].textContent") == f"After {label}'s transition ends"
     run_js(dlg, f"{day_scene}.versions[3].label = 'Night'; changed(true)")
-    # Its rule and delay under Transition starts, its duration under Transition ends (level with
-    # the rule), and today's time under each.
+    # Its rule and delay under Transition starts; its length under its own label, Transition
+    # duration, with the end it makes under it; the two times on one line along the bottom.
     lines = run_js(dlg, """(() => { const v = $$('.version')[4], r = (s) => v.querySelector(s).getBoundingClientRect();
-        return { rule: r('.c-start select').top, wait: r('.c-start .wait input').top, length: r('.c-end .length').top,
+        return { rule: r('.c-start select').top, wait: r('.c-start .wait input').top, length: r('.c-end.duration input').top,
+                 label: v.querySelector('.c-end .cell-label').textContent, shown: r('.c-end .cell-label').height > 0,
                  start: r('.when-start').top, end: r('.when-end').top }; })()""")
     assert lines["wait"] > lines["rule"] and lines["start"] > lines["wait"], lines
-    assert abs(lines["length"] - lines["rule"]) < 4 and lines["end"] > lines["length"], lines
-    until(app, lambda: run_js(dlg, "$$('.version')[4].querySelector('.when-end').textContent").startswith("Today, "), 5)
+    assert lines["label"] == "Transition duration" and lines["shown"] and lines["end"] > lines["length"], lines
+    assert abs(lines["start"] - lines["end"]) < 2, lines
+    until(app, lambda: run_js(dlg, "$$('.version')[4].querySelector('.when-end').textContent").startswith("Ends today, "), 5)
+    assert run_js(dlg, "$$('.version')[4].querySelector('.when-start').textContent").startswith("Starts today, ")
+    # Preview on a version: the preview comes into view and plays its transition, from a little
+    # before it starts to fully in, and stays there.
+    run_js(dlg, "$('main').scrollTop = $('main').scrollHeight")
+    mark = run_js(dlg, "S.marks.find((m) => m.index === 4)")
+    run_js(dlg, "$$('.version')[4].querySelector('.preview-transition').click()")
+    until(app, lambda: run_js(dlg, "!!playing"), 3, "Preview didn't play the transition")
+    until(app, lambda: run_js(dlg, "!playing"), 8, "the transition kept playing")
+    end = (mark["start"] + mark["fade"]) % 1440
+    assert abs(((run_js(dlg, "scrub") - end + 720) % 1440) - 720) <= 20, (run_js(dlg, "scrub"), mark)
+    assert run_js(dlg, """(() => { const r = $('.editor .preview').getBoundingClientRect(), m = $('main').getBoundingClientRect();
+        return r.top >= m.top - 1 && r.bottom <= m.bottom + 1; })()"""), "the preview wasn't brought into view"
+    run_js(dlg, "$('#backToNow').click(); $('main').scrollTop = 0")
     run_js(dlg, "$('main').scrollTop = $('main').scrollHeight")
     shoot(dlg, "scene-follows")
     run_js(dlg, "$('main').scrollTop = 0")
@@ -293,7 +368,7 @@ def check(app, shots, base):
                        "{ index: 2, start: 44, fade: 90 }])") == [[0, 369, 416], [1, 1159, 1170], [2, 1484, 1574]]
     assert run_js(dlg, "[dayAndTime(1170), dayAndTime(1484)]") == ["Today, 19:30", "Next day, 00:44"]
     print("PASS: a new version starts after the one above's transition, plus a delay, with no time to set; "
-          "its name is a heading to rename.")
+          "its name is a heading to rename; Preview plays its transition.")
 
     # A height that isn't a named moment (from an older version) stays, with its time today under it.
     run_js(dlg, f"Object.assign({day_scene}.versions[1], {{ direction: 'rising', from: 15 }}); changed(true)")
@@ -314,14 +389,23 @@ def check(app, shots, base):
     narrow = run_js(dlg, row)
     assert min(narrow["widths"]) >= 170 and narrow["overflow"] <= 0, narrow
     shoot(dlg, "versions-narrow")
-    # Scrolled down, the list of scenes stays at the top, over the editor (the New scene buttons go).
+    # Scrolled down, a dropdown of the scenes stays at the top, on its own background over the
+    # editor (the list and the New scene buttons go), and opens another scene.
     run_js(dlg, "$('main').scrollTop = $('main').scrollHeight")
     pump(app, 0.3)
-    assert run_js(dlg, """(() => { const m = $('main').getBoundingClientRect(), l = $('.scene-list').getBoundingClientRect(),
-        b = $('[aria-current=true].scene-item').getBoundingClientRect();
-        return $('main').scrollTop > 0 && l.top >= m.top - 1 && l.top <= m.top + 1
-               && document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2).closest('.scene-item') !== null; })()"""), \
-        "the scene list scrolled away in a narrow window"
+    assert run_js(dlg, """(() => { const m = $('main').getBoundingClientRect(), bar = $('.scene-select'),
+        l = bar.getBoundingClientRect(), s = bar.querySelector('select').getBoundingClientRect();
+        return $('main').scrollTop > 0 && l.top >= m.top - 1 && l.top <= m.top + 1 && $('.scene-list').offsetParent === null
+               && getComputedStyle(bar).backgroundColor !== 'rgba(0, 0, 0, 0)'
+               && document.elementFromPoint(s.x + s.width / 2, s.y + s.height / 2).closest('.scene-select') !== null; })()"""), \
+        "the scene dropdown scrolled away in a narrow window"
+    was = run_js(dlg, "sel")
+    other = run_js(dlg, "[...$('.scene-select select').options].map((o) => o.value).find((v) => v !== sel)")
+    assert other, "only one scene to choose from"
+    for want in (other, was):
+        run_js(dlg, f"setv($('.scene-select select'), {json.dumps(want)})")
+        until(app, lambda w=want: run_js(dlg, "sel") == w and run_js(dlg, "$('.scene-select select').value") == w, 5,
+              "the scene dropdown didn't open the scene")
     run_js(dlg, "$('main').scrollTop = 0")
     # Two lines until a row's dropdowns have room for the longer rules ("After Night's transition ends").
     dlg.resize(1100, 780)
@@ -553,10 +637,17 @@ def check(app, shots, base):
     link = run_js(dlg, f"{album}.folder.link")
     assert run_js(dlg, f"{album}.versions.map(v => v.image)") == [f"@{link}/hills.png", f"@{link}/lake.png",
                                                                   f"@{link}/trip/coast.png"]
-    assert (library.FOLDERS / link).is_symlink(), "no link to the folder"
+    assert library._is_link(library.FOLDERS / link), "no link to the folder"   # a junction on Windows
+    # Open folder shows the folder itself (not the link) in the file manager.
+    opened = []
+    dlg.kiso_bridge.open_folder = opened.append
+    until(app, lambda: run_js(dlg, "!!$('#openAlbumFolder')"), 5, "no Open folder for a linked album")
+    run_js(dlg, "$('#openAlbumFolder').click()")
+    until(app, lambda: bool(opened), 5, "Open folder didn't open anything")
+    assert opened[0].resolve() == wall.resolve(), opened
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 3, 5)
     until(app, lambda: renderer.scene_look is None, 5, "the day cycle's moment stayed in Anki's window")
-    run_js(dlg, "$$('.album-tile .pick')[0].click()")
+    run_js(dlg, "$$('.album-tile .pick')[0].click(); $('#adjustCrop').click()")
     until(app, lambda: run_js(dlg, "!!$('.position-dialog')"), 5, "a linked picture didn't open for positioning")
     pump(app, 0.5)
     assert renderer.scene_look is None, "an album's preview went to Anki's window"
@@ -603,13 +694,14 @@ def check(app, shots, base):
     run_js(dlg, "$('#rescan').click()")
     until(app, lambda: run_js(dlg, "!!$('.folder-missing')"), 5, "no warning for a missing folder")
     assert run_js(dlg, "$$('.album-tile').length") == 3
+    assert run_js(dlg, "$('#openAlbumFolder').disabled"), "Open folder is offered for a folder that's gone"
     (base / "Wallpapers-away").rename(wall)
     run_js(dlg, "$('#rescan').click()")
     until(app, lambda: run_js(dlg, "!$('.folder-missing')"), 5)
     # Saved, the link stays; the album deleted and saved, the link goes and the folder stays whole.
     run_js(dlg, "$('#save').click()")
     until(app, lambda: run_js(dlg, "$('#status').textContent") == "Saved", 5)
-    assert (library.FOLDERS / link).is_symlink()
+    assert library._is_link(library.FOLDERS / link)
     run_js(dlg, "byText('.scene-item span', 'Wallpapers').parentElement.click()")
     run_js(dlg, "$('#deleteScene').click()")
     until(app, lambda: run_js(dlg, "!!$('#confirmYes')"), 5)
@@ -618,8 +710,8 @@ def check(app, shots, base):
     until(app, lambda: run_js(dlg, "$('#status').textContent") == "Saved", 5)
     assert not (library.FOLDERS / link).exists(), "the unused link stayed"
     assert sorted(p.name for p in wall.rglob("*.png")) == ["coast.png", "dunes.png", "hills.png", "lake.png"]
-    print("PASS: a linked folder's pictures are served live, follow rescans, can be hidden, survive a "
-          "missing folder, and dropping the album removes only the link.")
+    print("PASS: a linked folder's pictures are served live, follow rescans, can be hidden, open in the file manager, "
+          "survive a missing folder, and dropping the album removes only the link.")
 
     # A folder copied once: an ordinary album of the copied pictures.
     run_js(dlg, "$('#addFolder').click()")
@@ -750,13 +842,12 @@ def check(app, shots, base):
     run_js(dlg, "draft.day.place = 'Somerville, New Jersey, United States'; changed(true)")
     assert run_js(dlg, "[$('.locate .place').textContent, $('.locate .place').title]") \
         == ["Near Somerville, New Jersey", "Somerville, New Jersey, United States"]
-    # Narrow, the preview sits above the controls, and the lighting sliders line up with the
-    # crossfade's, end to end.
+    # Narrow, the preview sits above the controls, and the lighting sliders line up, end to end.
     dlg.resize(800, 780)
     pump(app, 0.5)
     ends = run_js(dlg, "$$('.day-panel .slider input').map(e => { const r = e.getBoundingClientRect(); "
                        "return [Math.round(r.left), Math.round(r.right)]; })")
-    assert len(ends) == 3 and len({tuple(e) for e in ends}) == 1, ends
+    assert len(ends) == 2 and len({tuple(e) for e in ends}) == 1, ends
     assert abs(run_js(dlg, "$('.daylight').getBoundingClientRect().right") - ends[0][1]) <= 2, "the day's strip overhangs the sliders"
     assert run_js(dlg, "$('.light-preview').getBoundingClientRect().bottom <= $('.light-controls').getBoundingClientRect().top")
     dlg.resize(1100, 780)
@@ -767,6 +858,22 @@ def check(app, shots, base):
     until(app, lambda: renderer.scene_look is None, 5, "leaving Day & time kept the picked time in Anki's window")
     run_js(dlg, "byText('#nav button', 'Day & time').click()")
     print("PASS: the Day & time page looks up a rough location once, works out today's sun, and previews the light.")
+
+    # General: the crossfade, and Optimize large backgrounds, on by default; its Reset puts both back.
+    run_js(dlg, "byText('#nav button', 'General').click()")
+    until(app, lambda: run_js(dlg, "!!$('.general-panel .slider input')"), 5, "no General page")
+    shoot(dlg, "general")
+    optimize = "byText('label', 'Optimize large backgrounds').querySelector('input')"
+    assert run_js(dlg, f"{optimize}.checked && draft.display_copies === true")
+    assert "Video driver: OpenGL" in run_js(dlg, "$('.performance .video-driver').textContent")
+    run_js(dlg, f"setv($('.general-panel .slider input'), '6'); {optimize}.click()")
+    until(app, lambda: run_js(dlg, "!!byText('#nav button', 'General').querySelector('.dot')"), 5, "no unsaved dot on General")
+    assert run_js(dlg, "[draft.display_copies, draft.transition_seconds, $('#restorePage').textContent]") \
+        == [False, 6, "Reset general settings"]
+    run_js(dlg, "$('#restorePage').click()")
+    until(app, lambda: run_js(dlg, f"{optimize}.checked && draft.transition_seconds === 2"), 5, "Reset didn't put General back")
+    run_js(dlg, "byText('#nav button', 'Day & time').click()")
+    print("PASS: the General page has the crossfade and Optimize large backgrounds (on by default), and resets both.")
 
     # Per-page Revert and Restore: only that page changes, and only in the draft.
     assert run_js(dlg, "!!$('#revertPage') && !!byText('#nav button', 'Day & time').querySelector('.dot')")
@@ -829,7 +936,7 @@ def check(app, shots, base):
     assert not done["errors"], done["errors"]
     names = done["files"]
     for tag in ("saved", "640px"):
-        for p in ("screens", "scenes", "backdrops", "day"):
+        for p in ("screens", "scenes", "backdrops", "day", "general"):
             assert any(n.startswith(tag) and f"-{p}-" in n for n in names), (tag, p, names)
         assert any(n.startswith(tag) and "-picture-library" in n for n in names), names
         assert any(n.startswith(tag) and "-trash" in n for n in names), names

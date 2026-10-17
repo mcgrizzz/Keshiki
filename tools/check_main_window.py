@@ -2,6 +2,7 @@
 across the toolbar and bottom-bar seams, follows screen changes and progress."""
 
 import json
+import time
 
 # isort: off
 # kiso_dev.harness sets Qt up for offscreen use before aqt loads, so it comes first.
@@ -60,6 +61,16 @@ def check(app, shots, base):
         assert (round(rect["width"]), round(rect["height"])) == (central.width(), central.height()), (name, rect)
         assert round(rect["y"]) == -top, (name, rect, top)
     print("PASS: each stage spans the window at its webview's offset.")
+
+    # Launch: Anki draws the toolbar once, before the collection is open, so it starts bare,
+    # and the deck list, drawn once it is, brings the first look. The toolbar shows it too.
+    js(app, mw.toolbarWeb, "keshiki.main.apply(null, true)")
+    renderer.shown = None
+    mw.deckBrowser.refresh()
+    until(app, lambda: (stage_state(app, mw.toolbarWeb) or {}).get("on"), 5, "the toolbar stayed bare at launch")
+    pump(app, 0.3)
+    assert stage_state(app, mw.toolbarWeb)["look"] == stage_state(app, mw.web)["look"] == renderer.shown
+    print("PASS: at launch, the toolbar Anki drew before the collection opened gets the first look too.")
 
     # Zooming the deck list (Ctrl+wheel, View > Zoom) keeps its stage on the whole window:
     # the page is smaller or larger in CSS pixels, and the stage follows.
@@ -148,10 +159,13 @@ def check(app, shots, base):
     assert any(r["color"] and r["text"] in ("9.39 hrs", "807 hrs") for r in got), got   # the blue numbers shift
     zero_untouched = "[...document.querySelectorAll('.zero-count')].every(e => !e.style.color && !e.style.textShadow)"
     assert js(app, mw.web, zero_untouched), "Anki's faint zero counts were changed"
-    # The outline is the text's opposite: this light theme's dark text gets a light one.
+    # The outline is the text's opposite: a light theme's dark text gets a light one, a dark
+    # theme's light text a dark one (Anki follows the system's theme: Windows may be dark).
+    from aqt.theme import theme_manager
     haloed = "[...keshiki.contrast.touched.keys()].map(e => e.style.textShadow).filter(Boolean)"
-    dark_text = [h for h in js(app, mw.web, haloed)]
-    assert dark_text and all("255, 255, 255" in h for h in dark_text), dark_text
+    halos = js(app, mw.web, haloed)
+    opposite = "0, 0, 0" if theme_manager.night_mode else "255, 255, 255"
+    assert halos and all(opposite in h for h in halos), (theme_manager.night_mode, halos)
     # Everywhere: all text has the outline (the deck table's too), more where needed.
     cfg["backdrops"]["text"]["outline"] = "everywhere"
     renderer.set_config(cfg)
@@ -194,16 +208,89 @@ def check(app, shots, base):
 
     # Back to the deck list: Anki builds that page after the screen has changed, so it loads
     # mid-crossfade. It fades with the bars from where they are, instead of jumping to the end.
+    # The new look waits for the deck list to draw: when it goes out, the page is already there,
+    # and it and the bars fade together from the start.
     dim = "Number(getComputedStyle(keshiki.main.dim).opacity)"
+    before = renderer.shown
+    started = time.monotonic()
     mw.moveToState("deckBrowser")
-    pump(app, 0.9)
+    until(app, lambda: renderer.shown is not before, 5, "the deck list's look never went out")
+    waited = time.monotonic() - started
+    assert js(app, mw.web, "!!(window.keshiki && keshiki.main && document.querySelector('center > table tr.deck'))"), \
+        "the look went out before the deck list was there"
+    print(f"  the look waited {waited * 1000:.0f} ms for the deck list")
+    pump(app, 0.7)
     main_dim, bar_dim = js(app, mw.web, dim), js(app, mw.toolbarWeb, dim)
-    assert 0.03 < main_dim < 0.29 and abs(main_dim - bar_dim) < 0.1, (main_dim, bar_dim)
+    assert 0.03 < main_dim < 0.29 and abs(main_dim - bar_dim) < 0.05, (main_dim, bar_dim)
     until(app, lambda: js(app, mw.web, dim) == 0 and js(app, mw.toolbarWeb, dim) == 0, 5)
     mw.moveToState("review")
     until(app, lambda: mw.state == "review", 5)
     pump(app, 2.5)
-    print("PASS: a page that loads mid-crossfade fades in step with the bars.")
+    print("PASS: a screen change waits for Anki's new page, then it and the bars fade together.")
+
+    # Studying straight from the overview, its fade not done: the reviewer's pages load
+    # mid-fade, on a look already going out, and join it where the bars are. Another picture,
+    # blurred, as studying often has.
+    other = new_scene("single", image=b)
+    cfg["scenes"].append(other)
+    cfg["screens"]["study"].update(same_as_main=False, scenes=[other["id"]], blur=8)
+    renderer.set_config(cfg)
+    mw.moveToState("deckBrowser")
+    loaded_dim = f"window.keshiki && keshiki.main ? {dim} : -1"   # -1 while the page loads
+    until(app, lambda: js(app, mw.web, loaded_dim) == 0 and js(app, mw.toolbarWeb, dim) == 0, 5)
+    before = renderer.shown
+    mw.moveToState("overview")
+    until(app, lambda: renderer.shown is not before, 5, "the overview's look never went out")
+    # Its picture's copy is made a moment later: the same look, another file.
+    pump(app, 0.2)
+    real = renderer.look
+    renderer.look = lambda: (lambda lk: dict(lk, layers=[dict(x, src=x["src"] + "#copy") for x in lk["layers"]]))(real())
+    renderer.refresh()
+    del renderer.look
+    pump(app, 0.3)
+    js(app, mw.web, "window.__overview = true")
+    mw.moveToState("review")
+    until(app, lambda: mw.state == "review" and js(app, mw.web, "!window.__overview && !!(window.keshiki && keshiki.main)"),
+          5, "the reviewer's page never loaded")
+    pump(app, 0.2)
+    main_dim, bar_dim, bottom_dim = (js(app, w, dim) for w in (mw.web, mw.toolbarWeb, mw.bottomWeb))
+    print(f"  reviewer loaded mid-fade: main area {main_dim:.2f}, toolbar {bar_dim:.2f}, bottom {bottom_dim:.2f}")
+    assert 0.03 < bar_dim < 0.27, "the toolbar isn't mid-fade"
+    assert abs(main_dim - bar_dim) < 0.04 and abs(bottom_dim - bar_dim) < 0.04, (main_dim, bar_dim, bottom_dim)
+    newest = """(() => { const live = [...keshiki.main.stack.children];
+        const el = live[live.length - 1]; return [el.dataset.key, Number(getComputedStyle(el).opacity), live.length]; })()"""
+    main_pic, bar_pic = js(app, mw.web, newest), js(app, mw.toolbarWeb, newest)
+    print(f"  newest picture: main area {main_pic}, toolbar {bar_pic}")
+    assert main_pic[0] == bar_pic[0] and abs(main_pic[1] - bar_pic[1]) < 0.06 and main_pic[2] == 2, (main_pic, bar_pic)
+    until(app, lambda: js(app, mw.web, loaded_dim) == 0.3 and js(app, mw.toolbarWeb, dim) == 0.3, 5)
+    cfg["scenes"].remove(other)
+    cfg["screens"]["study"].update(same_as_main=True, scenes=[], blur=0)
+    renderer.set_config(cfg)
+    pump(app, 2.5)
+    print("PASS: pages that load while a fade is under way join it, in step with the bars.")
+
+    # A page held up just as a look arrives (on a real GPU, a big picture can stall frames for
+    # 200 ms) starts its fade that far in: it and the bars stay in step.
+    js(app, mw.web, """(() => { const s = keshiki.main, was = s.apply;
+        s.apply = function (...a) { const r = was.apply(this, a); const end = performance.now() + 300;
+                                     while (performance.now() < end) {} s.apply = was; return r; }; })()""")
+    key = "study" if mw.state in ("overview", "review") else "main"
+    was = cfg["screens"][key]["dim"]
+    start = js(app, mw.web, dim)
+    target = 0.9 if start < 0.5 else 0.1
+    cfg["screens"][key]["dim"] = round(target * 100)
+    renderer.set_config(cfg)
+    pump(app, 0.9)
+    main_dim, bar_dim = js(app, mw.web, dim), js(app, mw.toolbarWeb, dim)
+    print(f"  held up 300 ms, dim {start:.2f} -> {target}: main area {main_dim:.2f}, toolbar {bar_dim:.2f}")
+    lo, hi = sorted((start, target))
+    assert lo + 0.1 < bar_dim < hi - 0.1, "the toolbar isn't mid-fade"
+    assert abs(main_dim - bar_dim) < 0.04, (main_dim, bar_dim)
+    until(app, lambda: abs(js(app, mw.web, dim) - target) < 0.01, 5)
+    cfg["screens"][key]["dim"] = was
+    renderer.set_config(cfg)
+    until(app, lambda: abs(js(app, mw.web, dim) - start) < 0.01 and abs(js(app, mw.toolbarWeb, dim) - start) < 0.01, 5)
+    print("PASS: a page held up as a look arrives starts its fade that far in, in step with the bars.")
 
     # Anki's "hide bottom bar" collapses it mid-review; its stage follows its new offset.
     mw.pm.set_hide_bottom_bar(True)
@@ -267,6 +354,7 @@ def check(app, shots, base):
         mw.col.decks.select(more)
         mw.moveToState("review")
         until(app, lambda: mw.state == "review" and mw.reviewer.card is not None, 10)
+        until(app, lambda: not renderer._settling.pending, 5)   # the screen change's own check, done
         first = mw.reviewer.card.id
         calls.clear()
         mw.reviewer._showAnswer()

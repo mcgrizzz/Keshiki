@@ -44,6 +44,9 @@ DEFAULTS: Dict[str, Any] = {
     "day": {"source": "manual", "sunrise": "06:30", "sunset": "19:30", "latitude": None, "longitude": None,
             "place": ""},
     "transition_seconds": 2.0,
+    # An unblurred screen shows pictures much bigger than the screen from a copy sized for it
+    # (display.py): faster, fine detail a little softer. Blurred screens always use copies.
+    "display_copies": True,
     # tint: light the pictures by the sun's height (daylight.py), at tint_strength percent.
     # bloom: how much a night picture's own lights glow, in percent (50 is the standard look).
     # scope: which scenes it lights, only day cycles ("day") or "all".

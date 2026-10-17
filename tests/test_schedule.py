@@ -2,12 +2,14 @@ from keshiki.config import migrate, new_scene
 from keshiki.schedule import (
     build_look,
     compose,
+    current_turn,
     day_anchors,
     grade_toward,
     light,
     pick_scene,
     scene_for_turn,
     screen_turns,
+    showing,
     version_starts,
 )
 
@@ -327,3 +329,40 @@ def test_backdrops_come_with_a_screen_that_uses_them_as_a_copy():
     assert before["backdrops"] == cfg["backdrops"] and before["backdrops"]["table"]["opacity"] == 40
     cfg["backdrops"]["table"]["opacity"] = 70   # changed in place: the look shown before doesn't follow
     assert before["backdrops"]["table"]["opacity"] == 40 and look() != before
+
+
+def test_a_chosen_picture_shows_until_the_shuffle_moves_on():
+    cfg = migrate({})[0]
+    cfg["scenes"] = [{"id": "a", "name": "A", "kind": "album",
+                      "versions": [{"label": "", "image": f"{n}.jpg"} for n in "pqrs"]}]
+    cfg["screens"]["main"].update(scenes=["a"], every=60)
+    turn = lambda now, chosen=None: current_turn(cfg, "main", now_minutes=now, launch_seed=1, chosen=chosen)  # noqa: E731
+    picked = turn(600)
+    other = next(t for t in ("a#0", "a#1", "a#2", "a#3") if t != picked)
+    image = cfg["scenes"][0]["versions"][int(other[2:])]["image"]
+    chosen = {"scene": "a", "image": image, "at": 610}
+    assert turn(600, chosen) == other and turn(659, chosen) == other   # this hour's turn
+    assert turn(660, chosen) == turn(660)                              # the next hour's shuffle
+    assert showing(cfg, turn(600, chosen)) == {"scene": "a", "image": image}
+    assert turn(600, {"scene": "a", "image": "gone.jpg", "at": 600}) == picked   # not in the album: ignored
+    assert current_turn(cfg, "study", now_minutes=600, launch_seed=1, chosen=chosen) == other   # Studying follows
+    # Found by name: a picture taken out before it renumbers the rest.
+    cfg["scenes"][0]["versions"] = [v for v in cfg["scenes"][0]["versions"] if v["image"] != "p.jpg" or image == "p.jpg"]
+    assert showing(cfg, turn(600, chosen)) == {"scene": "a", "image": image}
+    cfg["screens"]["main"]["every"] = 0   # one pick per launch: until Anki restarts
+    assert showing(cfg, turn(99999, chosen)) == {"scene": "a", "image": image}
+
+
+def test_a_blurred_screen_shows_copies_smaller_the_more_the_blur():
+    cfg = migrate({})[0]
+    cfg["scenes"] = [new_scene("single", image="p.jpg")]
+    cfg["screens"]["main"].update(scenes=[cfg["scenes"][0]["id"]], blur=0)
+
+    def src(blur):
+        cfg["screens"]["main"]["blur"] = blur
+        return build_look(cfg, "main", minute_of_day=600, now_minutes=600, launch_seed=1, sun=None,
+                          percent_done=lambda: 0, image_url=lambda n: "/img/" + n,
+                          copy_url=lambda n, k: f"/copy-{k}/{n}")["layers"][0]["src"]
+    assert [src(b) for b in (0, 1, 2, 3, 4, 8, 15, 16, 30)] == [
+        "/img/p.jpg", "/img/p.jpg", "/copy-1/p.jpg", "/copy-1/p.jpg", "/copy-2/p.jpg", "/copy-4/p.jpg",
+        "/copy-4/p.jpg", "/copy-8/p.jpg", "/copy-8/p.jpg"]

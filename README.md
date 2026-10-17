@@ -31,6 +31,8 @@ For day cycles that follow the real sun, choose **Use my location** on **Day & t
 
 Images are copied into the add-on's `user_files` folder, so they stay when the add-on updates. **Picture library & trash...** under the scene list shows which are in use; unused ones go to a trash, where you can restore them or empty it. A folder kept in step isn't copied at all, and hiding a picture in its album (the crossed-out eye) leaves the folder untouched.
 
+A picture much bigger than your screen, like a camera photo, is shown from a copy sized for the screen, and on a screen with blur, a smaller one, the smaller the more the blur. Anki stays quick. Without blur, fine detail can look a little softer; to show pictures as they are there, turn off **Optimize large backgrounds** on the **General** page. On a screen with blur, the blur hides the difference, so copies are always used. If Anki still lags or stutters, try **Tools → Preferences → Appearance → Video driver: OpenGL** in Anki, then restart it. The copies are kept in `user_files/display`, up to 1 GB; your pictures are never changed, and deleting that folder is safe.
+
 Keshiki needs Anki 26.08 or newer. Turn off other background add-ons (like Custom Background Image and Gear Icon) while you use it. They draw over its picture.
 
 ## More add-ons

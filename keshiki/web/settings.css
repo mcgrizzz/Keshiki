@@ -29,9 +29,9 @@
                           background: #000a; color: #fff; font-size: 11.5px; font-variant-numeric: tabular-nums; }
 @media (max-width: 860px) { .light-body { grid-template-columns: minmax(0, 1fr); } .light-preview { max-width: 260px; } }
 .location-edit { margin-top: 4px; }
-/* Day & time: a wider label column ("Crossfade duration", "Fallback sunrise"); a choice's
-   settings sit under it, indented to its label, their labels' column that much narrower. */
-.aligned.day-panel { --kk-label: 140px; }
+/* Day & time and General: a wider label column ("Fallback sunrise", "Crossfade duration"); a
+   choice's settings sit under it, indented to its label, their labels' column that much narrower. */
+.aligned.day-panel, .aligned.general-panel { --kk-label: 140px; }
 .option-body { margin: 0 0 8px 26px; }
 .option-body > .field:first-child { margin-top: 4px; }
 .aligned .option-body .field { grid-template-columns: calc(var(--kk-label) - 26px) minmax(0, 1fr); }
@@ -74,15 +74,17 @@
 .aligned { --kk-label: 124px; --kk-dep: 16px; --kk-gap: 12px; }
 .screen-controls { --kk-label: 100px; --kk-dep: 16px; --kk-gap: 10px; }
 .aligned .field, .screen-controls .field { grid-template-columns: var(--kk-label) minmax(0, 1fr); column-gap: var(--kk-gap); }
-.aligned fieldset.dependent, .screen-controls fieldset.dependent { margin-left: 4px; padding-left: calc(var(--kk-dep) - 6px); }
+.aligned fieldset.dependent, .screen-controls fieldset.dependent { margin-left: 4px; padding-left: calc(var(--kk-dep) - 5px); }
 .aligned fieldset.dependent .field, .screen-controls fieldset.dependent .field {
   grid-template-columns: calc(var(--kk-label) - var(--kk-dep)) minmax(0, 1fr); }
 .screen-controls select.shuffle { justify-self: start; width: auto; }
-/* Scenes: the chosen ones, then the dropdown for another under them; the label at the top. */
+/* Scenes: the chosen ones and the dropdown for another in one wrapping group (the dropdown
+   beside them where there's room); the label at the top of the group. */
 .scene-field { align-items: start; }
-.scene-field > .label { padding-top: 5px; }
-.scene-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; min-width: 0; }
-.scene-pick select { max-width: 100%; }
+.scene-field > .label { padding-top: 7px; }   /* level with the first chip */
+.scene-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.scene-pick > .chips { display: contents; }
+.scene-pick select { max-width: 100%; width: auto; }
 @container (max-width: 600px) { .screen-body { grid-template-columns: 176px minmax(0, 1fr); gap: 4px 14px; } }
 @container (max-width: 440px) { .screen-body { grid-template-columns: minmax(0, 1fr); } .screen-body .mock { max-width: 300px; } }
 .backdrop-line { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; }
@@ -127,7 +129,8 @@
 .color-choice input[type=color][hidden] { display: none; }
 
 /* Under its checkbox: indented, and dimmed while the checkbox is off. */
-fieldset.dependent { min-width: 0; margin: 6px 0 0 7px; padding: 0 0 0 18px; border: 0; border-left: 2px solid var(--kiso-soft); }
+fieldset.dependent { min-width: 0; margin: 6px 0 0 7px; padding: 0 0 0 18px; border: 0;
+                     border-left: 1px solid color-mix(in srgb, var(--kiso-soft) 60%, transparent); }
 fieldset.dependent > .choices:first-child { margin-top: 0; }
 fieldset.dependent:disabled { opacity: 0.5; }
 fieldset.dependent:disabled * { cursor: default; }
@@ -137,6 +140,7 @@ fieldset.dependent:disabled * { cursor: default; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 3px; border-radius: 999px;
         border: 1px solid var(--kiso-border); background: var(--kiso-inset); }
 .chip img, .chip .swatch { width: 26px; height: 18px; object-fit: cover; border-radius: 999px; background: var(--kiso-soft); }
+.chip .swatch { background-size: cover; background-position: center; }
 .chip-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #main .chip button { border: 0; padding: 0 6px; background: none; color: var(--kiso-muted); font-size: 15px; line-height: 1; }
 
@@ -216,7 +220,11 @@ fieldset.dependent:disabled * { cursor: default; }
 .vhead { padding-bottom: 6px; }
 .version { padding: 12px 0; border-top: 1px solid var(--kiso-soft); }
 .version > .pick { grid-area: 1 / 1; }
-.version > input.label, .version > .vname { grid-area: 1 / 2; margin-top: 6px; }
+.version > .vtitle { grid-area: 1 / 2; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+                    min-width: 0; margin-top: 6px; }
+/* Plays this version's transition in the preview (previewTransition). */
+#main .preview-transition { display: inline-flex; align-items: center; gap: 4px; padding: 2px 0; font-size: 12px; }
+#main .preview-transition svg { width: 11px; height: 11px; fill: currentColor; }
 .version > .c-start, .vhead > .c-start { grid-area: 1 / 3; }
 .version > .c-end, .vhead > .c-end { grid-area: 1 / 4; }
 .vhead > .c-name { grid-area: 1 / 2; }
@@ -228,10 +236,14 @@ fieldset.dependent:disabled * { cursor: default; }
 .cell > .unit.labelled { flex-wrap: wrap; gap: 2px 8px; }
 .unit.labelled > .unit { white-space: nowrap; }
 .cell-label { display: none; font-size: 12px; color: var(--kiso-muted); }
-.when { min-height: 1.4em; margin-top: -2px; color: var(--kiso-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+/* A duration (a set time, or after the version above) is labelled as one in any width. */
+.cell.duration > .cell-label { display: block; }
+/* Each cell as tall as the row, its time at the bottom: the two times line up whatever is above them. */
+.version > .cell { align-self: stretch; }
+.when { min-height: 1.4em; margin-top: auto; color: var(--kiso-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 /* The row showing in the preview: its picture and name are marked. */
 #main .version.showing > .pick { box-shadow: 0 0 0 2px var(--kiso-canvas), 0 0 0 4px var(--kiso-accent); }
-.version.showing > input.label { border-color: var(--kiso-accent); }
+.version.showing .vtitle > input.label { border-color: var(--kiso-accent); }
 #main .pick { width: 64px; height: 40px; padding: 0; border-radius: 5px; background: var(--kiso-soft) center / cover;
               color: var(--kiso-muted); font-size: 18px; }
 #main .pick.empty { border-style: dashed; }
@@ -249,7 +261,7 @@ fieldset.dependent:disabled * { cursor: default; }
 .version select { width: 100%; min-width: 0; }
 .version .unit input[type=time] { width: 112px; }
 .versions .file { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#main .add-version { grid-column: 2 / span 2; justify-self: start; margin-top: 10px; }
+#main .add-version { grid-column: 1 / -1; justify-self: start; margin-top: 10px; }
 .picker { display: grid; grid-template-columns: 1fr 300px; gap: 14px; min-height: 0; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; overflow-y: auto; max-height: 56vh; align-content: start; padding: 2px; }
 #modal .tile { aspect-ratio: 16 / 10; padding: 0; border-radius: 6px; background: var(--kiso-soft) center / cover; border: 2px solid transparent; }
@@ -272,11 +284,12 @@ fieldset.dependent:disabled * { cursor: default; }
 .mini img { display: block; width: 100%; pointer-events: none; }
 .mini .crop-frame { border-width: 1.5px; border-radius: 2px; }
 .shape-note { margin: 0; }
-/* An album's pictures as tiles; the one in the preview is outlined. */
+/* An album's pictures as tiles filling the editor's width, in even columns; the one in the
+   preview is outlined. */
 .album-wrap .help { margin: 12px 0 8px; }
-.album { display: flex; flex-wrap: wrap; gap: 8px; }
-.album-tile { position: relative; }
-#main .album-tile .pick, #main .album-add { box-sizing: border-box; width: 96px; height: 60px; }
+.album { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+.album-tile { position: relative; min-width: 0; }
+#main .album-tile .pick, #main .album-add { box-sizing: border-box; width: 100%; height: auto; aspect-ratio: 16 / 10; }
 #main .album-tile.shown .pick { box-shadow: 0 0 0 2px var(--kiso-canvas), 0 0 0 4px var(--kiso-accent); }
 /* Always shown (a hover-only control is easy to miss), fully on hover. */
 /* A button like the page's others (not a badge that could read as "hidden"). */
@@ -287,6 +300,20 @@ fieldset.dependent:disabled * { cursor: default; }
 #main .album-tile .remove svg { width: 12px; height: 12px; }
 #main .album-tile .remove.hide svg { width: 14px; height: 14px; stroke-width: 2; }
 #main .album-tile .remove:hover, #main .album-tile .remove:focus-visible { border-color: var(--kiso-link); color: var(--kiso-link); }
+/* The picture Anki's window shows now. */
+.album-tile .now-badge { position: absolute; left: 4px; bottom: 4px; padding: 1px 6px; border-radius: 999px;
+                         background: var(--kiso-accent); color: #fff; font-size: 11px; font-weight: 600; line-height: 16px;
+                         pointer-events: none; box-shadow: 0 1px 3px #0005; }
+/* An album's stage: a compact preview of the picture chosen below, with what to do with it,
+   kept in view (where the window is tall enough) while the tiles scroll under it. */
+.album-stage { display: flex; align-items: center; gap: 8px 16px; margin: 0 -16px 12px; padding: 10px 16px;
+               background: var(--kiso-card); border-bottom: 1px solid var(--kiso-soft); }
+@media (min-height: 600px) { .album-stage { position: sticky; top: -18px; z-index: 4; } }
+#main .album-stage .preview { flex: none; width: auto; height: clamp(110px, 24vh, 200px); margin: 0; }
+.album-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; min-width: 0; }
+.album-actions .help { margin: 0; }
+#main #adjustCrop { display: inline-flex; align-items: center; gap: 6px; }
+#main #adjustCrop svg { width: 14px; height: 14px; stroke-width: 2; }
 #main .album-add { padding: 4px 8px; font-size: 12px; line-height: 1.25; white-space: normal; border-style: dashed; }
 /* Combining single pictures: a ticked list with each picture's thumbnail. */
 .combine-dialog .combine-list { display: flex; flex-direction: column; gap: 2px; max-height: 40vh; overflow-y: auto; }
@@ -294,8 +321,8 @@ fieldset.dependent:disabled * { cursor: default; }
 .combine-dialog .thumb { width: 48px; height: 30px; border-radius: 4px; background: var(--kiso-soft) center / cover; flex: none; }
 /* Folders: the path (shortened to its end, which names the folder). */
 .folder-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--kiso-muted); margin: 0; }
-.folder-line { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
-.folder-line .folder-path { flex: 1; min-width: 0; }
+.folder-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 12px; }
+.folder-line .folder-path { flex: 1 1 180px; min-width: 0; }
 .folder-line .check { margin: 0; white-space: nowrap; }
 .folder-dialog .choices { display: flex; flex-direction: column; gap: 2px; }
 .folder-dialog .folder-count { margin: -10px 0 4px 26px; }
@@ -342,27 +369,40 @@ fieldset.dependent:disabled * { cursor: default; }
   .versions:not(.single) { grid-template-columns: 64px minmax(0, 1fr) 26px minmax(0, 1fr) 26px; }
   .vhead { display: none; }
   .version > .pick { grid-area: 1 / 1; align-self: center; }
-  .version > input.label, .version > .vname { grid-area: 1 / 2 / auto / 5; margin: 0; align-self: center; }
+  .version > .vtitle { grid-area: 1 / 2 / auto / 5; flex-direction: row; align-items: center; gap: 4px 14px; margin: 0;
+                      align-self: center; }
   .version > .c-remove { grid-area: 1 / 5; margin: 0; align-self: center; }
   .version > .c-start { grid-area: 2 / 1 / auto / 3; padding-top: 10px; }
   .version > .c-end { grid-area: 2 / 3 / auto / 6; padding-top: 10px; }
   .cell-label { display: block; }
 }
 
-/* A narrow window: the scene list becomes a strip above the editor, which gets the full width. */
+/* The scene dropdown is for a narrow window (below). */
+.scene-select { display: none; }
+
+/* A narrow window: a dropdown of scenes above the editor, which gets the full width. */
 @media (max-width: 920px) {
   .scenes { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   /* Its parts become the page's: the New scene buttons and the library link scroll away, and the
-     list of scenes, a strip, stays at the top while the editor scrolls under it. */
+     scene dropdown stays at the top while the editor scrolls under it. */
   .scene-side { display: contents; }
   .list-actions { flex-direction: row; flex-wrap: wrap; align-items: center; }
-  .scene-side .scene-list { position: sticky; top: -18px; z-index: 5; flex-direction: row; overflow: auto hidden;
-                            margin: 0 -22px; padding: 6px 22px; background: var(--kiso-canvas);
-                            box-shadow: 0 1px 0 var(--kiso-soft); }
-  #main .scene-item { flex: none; width: 200px; padding: 4px 6px; }
-  .scene-item .thumb { width: 48px; height: 30px; }
+  .scene-side .scene-list { display: none; }
+  .scene-select { position: sticky; top: -18px; z-index: 5; display: flex; align-items: center; gap: 10px;
+                  margin: 0 -22px; padding: 8px 22px; background: var(--kiso-canvas);
+                  border-bottom: 1px solid var(--kiso-soft); }
+  .scene-select > span { color: var(--kiso-muted); }
+  .scene-select select { width: auto; min-width: 200px; max-width: 100%; }
+  .scene-select { box-sizing: border-box; height: 48px; }
+  .album-stage { top: 30px; }   /* under the dropdown: 48px less the page's 18px top padding */
+  #main .album-stage .preview { height: clamp(90px, 18vh, 150px); }
   #main .library-link { justify-self: start; margin-top: -6px; }
 }
 
-/* The footer's "Preview in Anki's window" switch, at its left end. */
-footer .in-window { margin: 0 8px 0 0; color: var(--kiso-muted); white-space: nowrap; }
+/* The footer's left end: the add-on's version, and under it the "Preview in Anki's window" switch. */
+footer .about { display: flex; flex-direction: column; gap: 1px; margin-right: 8px; }
+footer .addon-version { color: var(--kiso-muted); font-size: 12px; }
+footer .addon-version:empty { display: none; }
+footer .in-window { margin: 0; color: var(--kiso-muted); white-space: nowrap; }
+/* General: Anki's own video driver tip, under the Performance switch. */
+.performance .video-driver { margin: 10px 0 0; }

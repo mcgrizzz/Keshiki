@@ -52,6 +52,7 @@
         "place": ""
     },
     "transition_seconds": 2.0,
+    "display_copies": true,
     "light": {
         "tint": false,
         "tint_strength": 70,

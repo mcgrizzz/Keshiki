@@ -23,6 +23,17 @@ from .sun import crossing, elevation_at, synthetic_curve
 _synthetic = lru_cache(maxsize=8)(lambda sunrise, sunset: synthetic_curve(sunrise, sunset))
 
 DAY = 1440
+# A blurred screen shows its pictures from display copies, smaller the more the blur: the blur
+# takes away the fine detail a copy has less of. (blur from, in px: the copy covers the screen
+# divided by this.) Measured on a photo and on sharp-edged digital art, against the picture
+# itself at the same blur: these keep 94-98% of its detail, with no pixel more than 7 of 255
+# off; unblurred, a copy keeps only about half, so an unblurred screen shows the picture.
+BLUR_COPIES = ((16, 8), (8, 4), (4, 2), (2, 1))
+
+
+def copy_divisor(blur: float) -> Optional[int]:
+    """How much smaller than the screen a blurred screen's copies can be, or None (no copy)."""
+    return next((divisor for least, divisor in BLUR_COPIES if blur >= least), None)
 
 
 def screen_source(cfg: dict, screen: str, all_done: Callable[[], bool] = lambda: False
@@ -42,17 +53,49 @@ def screen_source(cfg: dict, screen: str, all_done: Callable[[], bool] = lambda:
     return look, look
 
 
+def current_turn(cfg: dict, screen: str, *, now_minutes: int, launch_seed: int,
+                 all_done: Callable[[], bool] = lambda: False, chosen: Optional[dict] = None) -> Optional[str]:
+    """The turn a screen shows now (a scene's id, or "<album id>#<picture index>"), or None.
+    `chosen` is an album's picture picked to show now ({"scene", "image", "at": now_minutes
+    then}), found by name (an unsaved edit may have renumbered the album): it holds until the
+    screen's shuffle moves on (for a screen that picks once per launch, until Anki restarts)."""
+    source, _ = screen_source(cfg, screen, all_done)
+    if source is None:
+        return None
+    turns = screen_turns(cfg, source.get("scenes") or [])
+    every = int(source.get("every") or 0)
+    if chosen and (every <= 0 or int(chosen["at"]) // every == now_minutes // every):
+        album = scenes_by_id(cfg).get(chosen.get("scene")) or {}
+        index = next((i for i, v in enumerate(album.get("versions") or []) if v.get("image") == chosen.get("image")), None)
+        if index is not None and f"{album['id']}#{index}" in turns:
+            return f"{album['id']}#{index}"
+    return pick_scene(turns, every, now_minutes, launch_seed)
+
+
+def showing(cfg: dict, turn: Optional[str]) -> Optional[dict]:
+    """What a turn shows: {"scene": id, "image": name} for an album's picture, else {"scene"}."""
+    if not turn:
+        return None
+    sid, _, index = turn.partition("#")
+    scene = scene_for_turn(cfg, turn)
+    if scene is None:
+        return None
+    return {"scene": sid, "image": scene["versions"][0].get("image")} if index else {"scene": sid}
+
+
 def build_look(cfg: dict, screen: str, *, minute_of_day: float, now_minutes: int, launch_seed: int,
                sun: Optional[Tuple[int, int]], percent_done: Callable[[], float],
                image_url: Callable[[str], str], image_stats: Callable[[str], Optional[dict]] = lambda n: None,
                all_done: Callable[[], bool] = lambda: False,
-               image_lights: Callable[[str], Optional[str]] = lambda n: None) -> Optional[dict]:
-    """What a screen shows now, in the shape layers.js takes, or None for no background."""
+               image_lights: Callable[[str], Optional[str]] = lambda n: None,
+               chosen: Optional[dict] = None, copy_url: Optional[Callable[[str, int], str]] = None) -> Optional[dict]:
+    """What a screen shows now, in the shape layers.js takes, or None for no background.
+    copy_url(name, divisor), if given, finds a picture's display copy for a blurred screen
+    (BLUR_COPIES)."""
     source, look = screen_source(cfg, screen, all_done)
     if source is None:
         return None
-    turn = pick_scene(screen_turns(cfg, source.get("scenes") or []), int(source.get("every") or 0),
-                      now_minutes, launch_seed)
+    turn = current_turn(cfg, screen, now_minutes=now_minutes, launch_seed=launch_seed, all_done=all_done, chosen=chosen)
     scene = scene_for_turn(cfg, turn or "")
     if scene is None:
         return None
@@ -63,8 +106,10 @@ def build_look(cfg: dict, screen: str, *, minute_of_day: float, now_minutes: int
         return None
     focus = cfg.get("images") or {}
     out = light(layers, cfg.get("light") or {}, minute_of_day, anchors, image_stats, image_lights, kind=scene.get("kind"))
+    divisor = copy_divisor(_num(look.get("blur")))
+    url = (lambda name: copy_url(name, divisor)) if copy_url and divisor else image_url
     return {
-        "layers": [dict(layer, src=image_url(layer["image"]),
+        "layers": [dict(layer, src=url(layer["image"]),
                         x=(focus.get(layer["image"]) or {}).get("x", 50),
                         y=(focus.get(layer["image"]) or {}).get("y", 50)) for layer in out],
         "dim": round(_num(look.get("dim")) / 100, 3),

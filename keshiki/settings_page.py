@@ -15,12 +15,23 @@ from typing import Callable, Optional
 from . import folders, library
 from ._kiso import settings as kiso_settings
 from .config import ADDON_PACKAGE, DEFAULTS, SUN_MOMENTS, images_in_use, migrate, new_scene, validate
-from .schedule import backdrop_look, build_look, day_anchors, light, screen_source, version_starts
+from .schedule import (
+    backdrop_look,
+    build_look,
+    copy_divisor,
+    current_turn,
+    day_anchors,
+    light,
+    screen_source,
+    showing,
+    version_starts,
+)
 from .schedule import compose as compose_layers
 from .sun import location_sun
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 _GEOM_KEY = "keshikiSettings"
+THUMB_BATCH = 8
 # How the settings window behaves on this computer, apart from the config, so Save and Cancel
 # never touch it: preview_in_window (unsaved edits and chosen moments show in Anki's window).
 PREFERENCES = library.ADDON_DIR / "user_files" / "preferences.json"
@@ -69,25 +80,50 @@ def _times(anchors: dict) -> dict:
     return {"sunrise": anchors["sunrise"], "sunset": anchors["sunset"]}
 
 
+def addon_version() -> str:
+    """The version a build (or a dev sync) marked in manifest.json; "" in the source tree."""
+    try:
+        return str(json.loads((library.ADDON_DIR / "manifest.json").read_text(encoding="utf-8")).get("human_version", ""))
+    except (OSError, ValueError):
+        return ""
+
+
 class SettingsBridge(kiso_settings.Bridge):
     prefix = "keshiki:"
 
     def __init__(self, mw, renderer=None, *, close: Optional[Callable[[], None]] = None,
                  pick_files: Callable[[], list] = lambda: [], pick_folder: Callable[[], str] = lambda: "",
                  open_folder: Callable[[Path], None] = lambda p: None,
-                 in_background: Callable = lambda fn, done: done(fn()), eval_js: Callable[[str], None] = lambda js: None):
+                 in_background: Callable = lambda fn, done, uses_collection=True: done(fn()), eval_js: Callable[[str], None] = lambda js: None):
         super().__init__(close=close)
         self.mw = mw
         self.renderer = renderer
         self.pick_files = pick_files
         self.pick_folder = pick_folder
         self.open_folder = open_folder
-        # in_background(fn, done): run fn off the main thread, then done(fn's result
-        # or exception) on it. eval_js reaches the page after the reply has gone.
+        # in_background(fn, done, uses_collection=True): run fn off the main thread, then
+        # done(fn's result or exception) on it; uses_collection=False runs it beside the
+        # collection's work instead of after it. eval_js reaches the page after the reply has gone.
         self.in_background = in_background
         self.eval_js = eval_js
         # Off: Anki's window keeps what's saved while the settings are open (a slow computer).
         self.in_window = preferences().get("preview_in_window", True) is not False
+
+    def _preview_url(self, name: str) -> str:
+        """Where the previews here find a picture: its display copy once it has one (they're too
+        small to show the copy's softer detail)."""
+        display = getattr(self.renderer, "display", None)
+        return display.url(name) if display else library.image_url(name)
+
+    def _window_url(self, cfg: dict):
+        """How Anki's window finds an unblurred screen's pictures: copies if the draft asks."""
+        display = getattr(self.renderer, "display", None)
+        return display.url if display and cfg.get("display_copies") else library.image_url
+
+    def _copy_url(self):
+        """How Anki's window finds a blurred screen's copies (schedule.BLUR_COPIES)."""
+        display = getattr(self.renderer, "display", None)
+        return display.url if display else None
 
     def saved(self) -> dict:
         return migrate(self.mw.addonManager.getConfig(ADDON_PACKAGE) or {})[0]
@@ -104,12 +140,27 @@ class SettingsBridge(kiso_settings.Bridge):
         return {"cfg": cfg, "defaults": migrate({})[0], "images": library.list_images(), "trash": library.list_trash(),
                 "linked": folders.pictures(cfg), "missing": missing,
                 "templates": {k: new_scene(k) for k in ("single", "day", "progress")},
-                "percent": self._percent(), "window": self._window_size(), "in_window": self.in_window}
+                "percent": self._percent(), "window": self._window_size(), "in_window": self.in_window,
+                "version": addon_version()}
 
     def _thumbs(self, cfg_or_names) -> None:
+        """Make linked pictures' missing thumbnails in the background, a few at a time, handing
+        each batch to the page as it's done (keshikiThumbs)."""
         names = cfg_or_names if isinstance(cfg_or_names, list) else list(folders.pictures(cfg_or_names))
-        if names:
-            self.in_background(lambda: folders.make_thumbs(names), lambda _result: None)
+        self._thumb_batches([n for n in names if not (library.THUMBS / library._thumb_name(n)).exists()])
+
+    def _thumb_batches(self, names: list) -> None:
+        if not names:
+            return
+        batch, rest = names[:THUMB_BATCH], names[THUMB_BATCH:]
+
+        def done(_result) -> None:
+            # A picture Qt can't read gets no thumbnail: then the picture itself.
+            made = {n: library.thumb_url(n) for n in batch}
+            self.eval_js(f"window.keshikiThumbs && keshikiThumbs({json.dumps(made)})")
+            self._thumb_batches(rest)
+
+        self.in_background(lambda: folders.make_thumbs(batch), done, uses_collection=False)
 
     # -- folders ----------------------------------------------------------
 
@@ -210,9 +261,18 @@ class SettingsBridge(kiso_settings.Bridge):
         library.empty_trash()
         return {"trash": library.list_trash()}
 
-    def op_open_folder(self, _arg) -> None:
+    def op_open_folder(self, arg) -> Optional[dict]:
+        """Open the image library's folder, or (arg {"path"}) a linked album's, in the system's
+        file manager."""
+        if arg and arg.get("path"):
+            folder = Path(arg["path"]).expanduser()
+            if not folder.is_dir():
+                return {"error": "Can't find this folder."}
+            self.open_folder(folder)
+            return None
         library.IMAGES.mkdir(parents=True, exist_ok=True)
         self.open_folder(library.IMAGES)
+        return None
 
     def op_compose(self, arg) -> dict:
         """One scene at a given position, for the scene editor's preview and timeline."""
@@ -228,7 +288,7 @@ class SettingsBridge(kiso_settings.Bridge):
         layers = light(layers, arg.get("light") or DEFAULTS["light"], minute, anchors, library.image_stats,
                        library.lights_url, kind=scene.get("kind"))
         focus = arg.get("images") or {}
-        out = [dict(layer, src=library.image_url(layer["image"]),
+        out = [dict(layer, src=self._preview_url(layer["image"]),
                     **{k: (focus.get(layer["image"]) or {}).get(k, 50) for k in ("x", "y")}) for layer in layers]
         if self.renderer and "show" in arg:
             # The scrubbed moment in Anki's main window too, with the current screen's dim and blur.
@@ -236,7 +296,10 @@ class SettingsBridge(kiso_settings.Bridge):
             if arg["show"] and out and self.in_window:
                 cfg = migrate(arg.get("cfg") or {})[0]
                 _, look = screen_source(cfg, self.renderer.screen())
-                moment = {"layers": out, "dim": round(float(look.get("dim") or 0) / 100, 3),
+                divisor, copy_url = copy_divisor(float(look.get("blur") or 0)), self._copy_url()
+                url = (lambda n: copy_url(n, divisor)) if divisor and copy_url else self._window_url(cfg)
+                moment = {"layers": [dict(layer, src=url(layer["image"])) for layer in out],
+                          "dim": round(float(look.get("dim") or 0) / 100, 3),
                           "blur": float(look.get("blur") or 0), "fade": int(arg.get("fade") or 0), **backdrop_look(cfg, look)}
             if moment or self.renderer.scene_look is not None:
                 self.renderer.show_scene_moment(moment)
@@ -257,8 +320,9 @@ class SettingsBridge(kiso_settings.Bridge):
         return build_look(cfg, "main" if done else arg["screen"], all_done=(lambda: True) if done else self._all_done, minute_of_day=now.hour * 60 + now.minute,
                           now_minutes=int(now.timestamp() / 60 + offset),
                           launch_seed=getattr(self.renderer, "launch_seed", 0), sun=_sun(cfg["day"]),
-                          percent_done=self._percent, image_url=library.image_url,
-                          image_stats=library.image_stats, image_lights=library.lights_url)
+                          percent_done=self._percent, image_url=self._preview_url,
+                          image_stats=library.image_stats, image_lights=library.lights_url,
+                          chosen=getattr(self.renderer, "chosen", None))
 
     def op_moment_at(self, arg) -> None:
         """Anki's window as its screen would look at a minute of today, with the draft config
@@ -270,11 +334,33 @@ class SettingsBridge(kiso_settings.Bridge):
         look = build_look(cfg, self.renderer.screen(), all_done=self._all_done, minute_of_day=float(arg["minute"]),
                           now_minutes=int(now.timestamp() / 60 + offset),
                           launch_seed=getattr(self.renderer, "launch_seed", 0), sun=_sun(cfg["day"]),
-                          percent_done=self._percent, image_url=library.image_url,
-                          image_stats=library.image_stats, image_lights=library.lights_url)
+                          percent_done=self._percent, image_url=self._window_url(cfg),
+                          image_stats=library.image_stats, image_lights=library.lights_url,
+                          chosen=getattr(self.renderer, "chosen", None), copy_url=self._copy_url())
         if look:
             look["fade"] = 120   # dragging: each step eases into the next
         self.renderer.show_scene_moment(look)
+
+    def op_showing(self, arg) -> dict:
+        """What each screen of Anki's window shows now ({"scene", "image"} for an album's
+        picture), for marking it in the album editor: with the config the window uses (the draft
+        once it has reached it, else the saved one), and by name, since the page's numbering may
+        differ from it."""
+        active = getattr(self.renderer, "active_config", None)
+        cfg = active() if active else migrate(arg["cfg"])[0]
+        now, offset = _now()
+        return {screen: showing(cfg, current_turn(
+                    cfg, screen, now_minutes=int(now.timestamp() / 60 + offset),
+                    launch_seed=getattr(self.renderer, "launch_seed", 0), all_done=self._all_done,
+                    chosen=getattr(self.renderer, "chosen", None)))
+                for screen in ("main", "study")}
+
+    def op_show_now(self, arg) -> dict:
+        """Show an album's picture ({"scene", "image"}) in Anki's window now, until its screen's
+        shuffle moves on. Not a setting: it takes effect at once, saved or not."""
+        if self.renderer:
+            self.renderer.choose(arg["scene"], arg["image"])
+        return self.op_showing(arg)
 
     def op_locate(self, _arg) -> dict:
         """Start a location lookup; the page hears back through keshikiLocated()."""
@@ -349,12 +435,17 @@ def make_dialog(mw, renderer):
         def pick_folder():
             return QFileDialog.getExistingDirectory(dlg, "Add a folder of pictures")
 
-        def in_background(fn, done):
-            mw.taskman.run_in_background(fn, lambda future: done(future.result()))
+        def eval_js(js):
+            from aqt.qt import sip
+            if not sip.isdeleted(web):   # a background answer may come after the window has closed
+                web.eval(js)
+
+        def in_background(fn, done, uses_collection=True):
+            mw.taskman.run_in_background(fn, lambda future: done(future.result()), uses_collection=uses_collection)
 
         return SettingsBridge(mw, renderer, pick_files=pick_files, pick_folder=pick_folder,
                               open_folder=lambda p: openFolder(str(p)),
-                              in_background=in_background, eval_js=lambda js: web.eval(js))
+                              in_background=in_background, eval_js=eval_js)
 
     def finished():
         if renderer:

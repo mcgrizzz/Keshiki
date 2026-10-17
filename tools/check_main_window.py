@@ -14,11 +14,16 @@ from images import make_test_image
 
 
 def stage_state(app, web):
-    return js(app, web, """(() => { const s = window.keshiki && keshiki.main;
-        if (!s) return null;
-        return { look: JSON.parse(s.shown), on: document.documentElement.classList.contains("keshiki-on"),
-                 layers: [...s.stack.children].filter(e => !e.dataset.leaving).map(e => [e.dataset.src, e.style.opacity]),
-                 rect: s.root.getBoundingClientRect().toJSON() }; })()""")
+    """The page's stage, or None: before it has one, or when the answer is lost to the page
+    loading again (on a slow machine Anki can still be drawing it), to be asked again."""
+    try:
+        return js(app, web, """(() => { const s = window.keshiki && keshiki.main;
+            if (!s) return null;
+            return { look: JSON.parse(s.shown), on: document.documentElement.classList.contains("keshiki-on"),
+                     layers: [...s.stack.children].filter(e => !e.dataset.leaving).map(e => [e.dataset.src, e.style.opacity]),
+                     rect: s.root.getBoundingClientRect().toJSON() }; })()""", 3)
+    except AssertionError:
+        return None
 
 
 def seam_mismatch(img, y, x0, x1):

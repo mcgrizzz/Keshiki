@@ -120,16 +120,29 @@ def check(app, shots, base):
                            {"image": other, "src": display.url(other), "opacity": 0.5, "x": 50, "y": 50}],
                 "dim": 0, "blur": 0, "fade": 0}
     renderer.show_scene_moment(two())
+    # Once it's all drawn: two grabs apart that are alike (software drawing on CI is slow).
     pump(app, 1)
     before = central.grab().toImage()
+    for _ in range(20):
+        pump(app, 0.3)
+        now = central.grab().toImage()
+        if difference(before, now) < 0.5:
+            break
+        before = now
     release()   # the other picture's copy
     renderer.show_scene_moment(two())
     other_copy = library.display_url(library.display_name(other, (1920, 1080)) + ".jpg")
     until(app, lambda: js(app, mw.web, LIVE) == [{"src": copy, "opacity": "1", "pics": 1},
                                                  {"src": other_copy, "opacity": "0.5", "pics": 1}], 10,
           f"the crossfade's layers didn't swap in place: {js(app, mw.web, LIVE)}")
-    print(f"  mid-crossfade swap: difference {difference(before, central.grab().toImage()):.2f}")
-    assert difference(before, central.grab().toImage()) < 2.5
+    after = central.grab().toImage()
+    for _ in range(20):
+        if difference(before, after) < 2.5:
+            break
+        pump(app, 0.3)
+        after = central.grab().toImage()
+    print(f"  mid-crossfade swap: difference {difference(before, after):.2f}")
+    assert difference(before, after) < 2.5
     renderer.show_scene_moment(None)
     print("PASS: a crossfade's two pictures swap to their copies in place.")
 

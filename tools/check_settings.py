@@ -292,9 +292,12 @@ def check(app, shots, base):
     # Scrolled down, the scene list and its New scene buttons stay in view.
     assert run_js(dlg, """(() => { const m = $('main').getBoundingClientRect(), b = $('#addDay').getBoundingClientRect();
         return b.top >= m.top && b.bottom <= m.bottom; })()"""), "the scene list scrolled away with the editor"
+    pump(app, 1)   # what the steps before set going has settled (a slow machine takes a while)
     run_js(dlg, "const t = $('.version input[type=time]'); t.focus(); setv(t, '22:15')")
     pump(app, 0.4)
-    assert run_js(dlg, "document.activeElement === $('.version input[type=time]')"), "the time box lost its focus"
+    assert run_js(dlg, "document.activeElement === $('.version input[type=time]')"), \
+        "the time box lost its focus: " + str(run_js(dlg, "[document.activeElement.outerHTML.slice(0, 120), "
+                                                     "!!$('.version input[type=time]'), document.hasFocus()]"))
     assert run_js(dlg, "$('main').scrollTop") == run_js(dlg, "window._top"), "editing the time scrolled the page"
     assert run_js(dlg, "draft.scenes.find(s => s.kind === 'day').versions[4].offset") == 22 * 60 + 15
     # A change that rebuilds the page keeps its place too.

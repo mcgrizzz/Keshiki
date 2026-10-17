@@ -15,6 +15,3 @@ jobs:
     with:
       floor-anki: "26.8.1"          # min_point_version 260800
       qt-checks: tools/qt_checks.sh
-      # Off for now: CI's Windows runner is slow enough to trip the checks' timing. They pass on
-      # a real Windows machine (run them there before a release).
-      qt-checks-windows: false

@@ -559,9 +559,15 @@ def check(app, shots, base):
     run_js(dlg, "$('main').scrollTop = 0")
     # The preview runs the same text help as Anki's window.
     run_js(dlg, "setv($('select.text-outline'), 'everywhere')")
-    until(app, lambda: run_js(dlg, "$$('.backdrop-mock .mock-table [style*=\"text-shadow\"], .backdrop-mock .mock-table[style*=\"text-shadow\"]').length"
-                                   " + $$('.backdrop-mock .mock-addon [style*=\"text-shadow\"]').length") > 0, 10,
-          "the preview's text isn't outlined")
+    outlined = ("$$('.backdrop-mock .mock-table [style*=\"text-shadow\"], .backdrop-mock .mock-table[style*=\"text-shadow\"]').length"
+                " + $$('.backdrop-mock .mock-addon [style*=\"text-shadow\"]').length")
+    try:
+        until(app, lambda: run_js(dlg, outlined) > 0, 10)
+    except AssertionError:
+        raise AssertionError("the preview's text isn't outlined: " + str(run_js(dlg, """(() => {
+            const b = $('.backdrop-mock'), s = stageFor(b);
+            return { shown: (s.shown || '').slice(0, 80), contrast: !!b.contrast, settings: b.contrast && b.contrast.settings,
+                     running: b.contrast && b.contrast.running, outline: draft.backdrops.text }; })()"""))) from None
     shoot(dlg, "backdrops")
     run_js(dlg, "$('#cancel').click(); byText('#nav button', 'Screens').click()")
     until(app, lambda: run_js(dlg, "draft.screens.main.backdrops === false"), 5)

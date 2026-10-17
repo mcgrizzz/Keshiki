@@ -267,9 +267,12 @@ def check(app, shots, base):
     assert abs(main_dim - bar_dim) < 0.04 and abs(bottom_dim - bar_dim) < 0.04, (main_dim, bar_dim, bottom_dim)
     newest = """(() => { const live = [...keshiki.main.stack.children];
         const el = live[live.length - 1]; return [el.dataset.key, Number(getComputedStyle(el).opacity), live.length]; })()"""
-    main_pic, bar_pic = js(app, mw.web, newest), js(app, mw.toolbarWeb, newest)
-    print(f"  newest picture: main area {main_pic}, toolbar {bar_pic}")
-    assert main_pic[0] == bar_pic[0] and abs(main_pic[1] - bar_pic[1]) < 0.06 and main_pic[2] == 2, (main_pic, bar_pic)
+    # The pages are asked one after the other, and the fade moves on between (on a slow machine,
+    # a lot): the toolbar's falls between the main area's just before and just after.
+    main_pic, bar_pic, main_after = js(app, mw.web, newest), js(app, mw.toolbarWeb, newest), js(app, mw.web, newest)
+    print(f"  newest picture: main area {main_pic} then {main_after[1]:.3f}, toolbar {bar_pic}")
+    lo, hi = sorted((main_pic[1], main_after[1]))
+    assert main_pic[0] == bar_pic[0] and lo - 0.04 < bar_pic[1] < hi + 0.04 and main_pic[2] == 2, (main_pic, bar_pic, main_after)
     until(app, lambda: js(app, mw.web, loaded_dim) == 0.3 and js(app, mw.toolbarWeb, dim) == 0.3, 10)
     cfg["scenes"].remove(other)
     cfg["screens"]["study"].update(same_as_main=True, scenes=[], blur=0)

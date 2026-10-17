@@ -461,7 +461,8 @@ function askCombine(singles) {
 // before stops showing in Anki's main window.
 function selectScene(id) {
   stopPlaying();
-  if (scrub !== null) call("end_moment");
+  if (scrub !== null || albumPicked) call("end_moment");
+  albumPicked = false;
   sel = id;
   scrub = null;
   albumShown = 0;
@@ -529,9 +530,13 @@ function sceneEditor(scene) {
 // Day cycles and progress scenes change with the clock or today's reviews; they have a timeline.
 const timed = (scene) => scene.kind === "day" || scene.kind === "progress";
 
-// An album's pictures as tiles: clicking one shows it in the preview and opens the picker
-// (to place or replace it), × takes it out, and the last tile adds more.
+// An album's pictures as tiles: clicking one shows it in the preview (and in Anki's window,
+// while previewing there is on) or opens the picker (to place or replace it), × takes it out,
+// and the last tile adds more.
 let albumShown = 0;
+// A tile clicked: its picture shows in Anki's window too, as a moment, until another scene or
+// page (the picture showing now, picked for you on opening, doesn't).
+let albumPicked = false;
 // A newly opened album starts on the picture Anki's window shows now (albumGrid, showing).
 let albumFollow = false;
 const SCREEN_NAMES = { main: "the deck list", study: "while studying" };
@@ -550,7 +555,7 @@ function albumGrid(scene, preview) {
                   title: v.image, "aria-label": `Preview ${v.image}`,
                   onclick: () => {
                     albumFollow = false;   // chosen here: the picture showing now doesn't take over
-                    if (v.image) select(i);
+                    if (v.image) { albumPicked = true; select(i); }
                     else pickImage(v.image, (name) => { v.image = name; changed(true); });
                   } },
       v.image ? "" : "+"),
@@ -565,25 +570,25 @@ function albumGrid(scene, preview) {
                     albumShown = Math.max(0, Math.min(albumShown, scene.versions.length - 1));
                     changed(true);
                   } }, icon(folder ? "hide" : "close"))));
-  // Show the picture in the preview on Anki's window now, until its screen's shuffle moves on.
+  // Make the picture the one its screens show, until their shuffle moves on.
   const onScreen = albumOnScreen(scene);
   const nowButton = h("button", { type: "button", id: "showNow", onclick: async () => {
     nowButton.disabled = true;
     mark(await call("show_now", { scene: scene.id, image: scene.versions[albumShown].image, cfg: draft }));
-  } }, "Show in Anki now");
+  } }, "Set as active image");
   const cropButton = h("button", { type: "button", id: "adjustCrop", onclick: () => {
     const v = scene.versions[albumShown];
     if (v && v.image) pickImage(v.image, () => {}, null, -1, { positionOnly: true });
   } }, icon("crop"), "Adjust crop...");
-  // Why Show in Anki now can't be used, when it can't: said beside it, where it stays put.
+  // Why Set as active image can't be used, when it can't: said beside it, where it stays put.
   const nowNote = h("span", { className: "help now-note" });
   const drawNow = () => {
     const screens = showing[albumShown];
     nowButton.disabled = !onScreen || !!screens;
-    nowNote.textContent = !onScreen ? "To show it, use this album on a screen first (Screens page)."
-      : screens ? `Showing now on ${screens.map((k) => SCREEN_NAMES[k]).join(" and ")}.`
-      : "Until the album's next shuffle.";
-    nowButton.title = !onScreen ? "This album isn't on any screen yet" : screens ? "Already showing" : "";
+    nowNote.textContent = !onScreen ? "To make it active, use this album on a screen first (Screens page)."
+      : screens ? `Active on ${screens.map((k) => SCREEN_NAMES[k]).join(" and ")}.`
+      : "Shows it on this album's screens until the next shuffle.";
+    nowButton.title = !onScreen ? "This album isn't on any screen yet" : screens ? "Already active" : "";
     cropButton.disabled = !(scene.versions[albumShown] || {}).image;
   };
   // Which picture each screen shows now: marked on its tile.
@@ -598,7 +603,7 @@ function albumGrid(scene, preview) {
     }
     tiles.forEach((t, i) => {
       t.querySelector(".now-badge")?.remove();
-      if (showing[i]) t.append(h("span", { className: "now-badge", title: `Showing now on ${showing[i].map((k) => SCREEN_NAMES[k]).join(" and ")}` }, "Now"));
+      if (showing[i]) t.append(h("span", { className: "now-badge", title: `Active on ${showing[i].map((k) => SCREEN_NAMES[k]).join(" and ")}` }, "Active"));
     });
     const first = Object.keys(showing)[0];
     if (albumFollow && first !== undefined && Number(first) !== albumShown) select(Number(first));
@@ -1054,7 +1059,8 @@ function updateScenePreview(preview, redrawRibbon) {
   const shown = scene.kind !== "album" ? scene
     : { ...scene, kind: "single", versions: scene.versions.slice(albumShown, albumShown + 1) };
   return call("compose", { scene: shown, day: draft.day, light: draft.light, position, images: draft.images,
-                           show: timed(scene) && scrub !== null, cfg: draft, fade: ease }).then((res) => {
+                           show: timed(scene) ? scrub !== null : scene.kind === "album" && albumPicked,
+                           cfg: draft, fade: ease }).then((res) => {
     // A late answer for a scene no longer on screen changes nothing.
     if (!res || res.error || sceneById(sel) !== scene || !preview.isConnected) return;
     S.anchors = res.anchors;
@@ -1653,8 +1659,8 @@ Kiso.setup({
     if (p !== "scenes") stopPlaying();
     if (p !== "day") lightAt = null;
     // A moment shown in Anki's window lasts while the page that chose it is showing: a day
-    // cycle scrubbed on Scenes, a time picked on Day & time's light strip.
-    if (!(p === "scenes" && scrub !== null) && !(p === "day" && lightAt !== null)) call("end_moment");
+    // cycle scrubbed or an album's picture clicked on Scenes, a time picked on Day & time's light strip.
+    if (!(p === "scenes" && (scrub !== null || albumPicked)) && !(p === "day" && lightAt !== null)) call("end_moment");
   },
   afterRender: () => refreshPreviews(),
   // kiso shots (dev): the Scenes page shows each scene in the editor, then the dialogs it opens.

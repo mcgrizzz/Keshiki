@@ -63,46 +63,50 @@ def check(app, shots, base):
     print("PASS: first images become an album on the deck list and preview live.")
 
     # The album on the Scenes page: its pictures as tiles. It opens on the picture Anki's window
-    # shows now (marked Now); a tile shows in the preview; its crop button opens the crop; Show in
-    # Anki now puts the previewed one on screen; × takes one out.
+    # shows now (marked Active), not shown in Anki's window as a moment; a tile clicked shows in the
+    # preview and in Anki's window; its crop button opens the crop; Set as active image makes the
+    # previewed one the album's picture on screen; × takes one out.
     run_js(dlg, "byText('#nav button', 'Scenes').click()")
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 4, 5, "the album's pictures aren't tiles")
     assert run_js(dlg, "$('.editor .kind').textContent") == "Album · 4 pictures"
     assert run_js(dlg, "!$('.ribbon') && !$('#play')"), "an album has no timeline"
     previewed = ("$$('.preview .keshiki-layer').filter(e => !e.dataset.leaving)"
                  ".map(e => e.dataset.src.split('/').pop())")
-    until(app, lambda: run_js(dlg, "$$('.album-tile .now-badge').length") == 1, 5, "no Now on the picture showing")
+    until(app, lambda: run_js(dlg, "$$('.album-tile .now-badge').length") == 1, 5, "no Active on the picture showing")
     showing = renderer.shown["layers"][0]["image"]
     assert run_js(dlg, "$('.album-tile.shown .now-badge') && draft.scenes[0].versions[albumShown].image") == showing
     until(app, lambda: run_js(dlg, previewed) == [showing], 5, "the album didn't open on the picture showing now")
-    assert run_js(dlg, "$('#showNow').disabled"), "Show in Anki now offered for the picture already showing"
+    assert run_js(dlg, "$('#showNow').disabled"), "Set as active image offered for the picture already showing"
+    assert run_js(dlg, "$('#showNow').textContent") == "Set as active image"
+    assert renderer.scene_look is None, "opening the album showed a moment in Anki's window"
     other = 2 if showing != "dusk.png" else 1
     want = run_js(dlg, f"draft.scenes[0].versions[{other}].image")
     run_js(dlg, f"$$('.album-tile .pick')[{other}].click()")
     until(app, lambda: run_js(dlg, previewed) == [want], 5, "the preview doesn't show the tile's picture")
+    until(app, lambda: [x["image"] for x in (renderer.scene_look or {}).get("layers", [])] == [want], 5,
+          "a clicked tile didn't show in Anki's window")
     assert run_js(dlg, "!$('#modal .dialog')"), "clicking a tile opened a dialog"
     assert run_js(dlg, "!$('.album-tile .adjust')"), "a crop button on the tiles"
     run_js(dlg, "$('#adjustCrop').click()")
     until(app, lambda: run_js(dlg, "!!$('.position-dialog')"), 5, "Adjust crop... didn't open the crop")
     run_js(dlg, "$('.position-dialog .primary').click()")
     run_js(dlg, "$('#showNow').click()")
-    until(app, lambda: (renderer.shown or {}).get("layers", [{}])[0].get("image") == want, 5,
-          "Show in Anki now didn't reach Anki's window")
+    until(app, lambda: (renderer.chosen or {}).get("image") == want, 5, "Set as active image didn't reach Anki's window")
     until(app, lambda: run_js(dlg, f"!!$$('.album-tile')[{other}].querySelector('.now-badge') && $('#showNow').disabled"), 5,
-          "the Now mark didn't move")
-    assert run_js(dlg, "$('.now-note').textContent").startswith("Showing now on the deck list"), \
+          "the Active mark didn't move")
+    assert run_js(dlg, "$('.now-note').textContent").startswith("Active on the deck list"), \
         run_js(dlg, "$('.now-note').textContent")
     shoot(dlg, "album-now")
-    # Taking a picture out renumbers the rest: Show in Anki now still shows the one picked, even
-    # before Anki's window has the edit.
+    # Taking a picture out renumbers the rest: Set as active image still picks the one previewed,
+    # even before Anki's window has the edit.
     removed = run_js(dlg, "draft.scenes[0].versions[0].image")
     run_js(dlg, "$$('.album-tile .remove')[0].click()")
     names = run_js(dlg, "draft.scenes[0].versions.map(v => v.image)")
-    pick = next(i for i in range(len(names) - 1, -1, -1) if names[i] != renderer.shown["layers"][0]["image"])
+    pick = next(i for i in range(len(names) - 1, -1, -1) if names[i] != renderer.chosen["image"])
     run_js(dlg, f"$$('.album-tile .pick')[{pick}].click(); $('#showNow').click()")
-    until(app, lambda: renderer.shown["layers"][0]["image"] == names[pick], 5,
-          f"Show in Anki now showed {renderer.shown['layers'][0]['image']}, not {names[pick]}")
-    until(app, lambda: run_js(dlg, f"!!$$('.album-tile')[{pick}].querySelector('.now-badge')"), 5, "Now isn't on it")
+    until(app, lambda: renderer.chosen["image"] == names[pick], 5,
+          f"Set as active image chose {renderer.chosen['image']}, not {names[pick]}")
+    until(app, lambda: run_js(dlg, f"!!$$('.album-tile')[{pick}].querySelector('.now-badge')"), 5, "Active isn't on it")
     run_js(dlg, f"draft.scenes[0].versions.unshift({{ label: '', image: {removed!r} }}); changed(true)")
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 4, 5)
     # The cause of that once: a look asked for while a new stage's first fade waits for its first
@@ -140,16 +144,22 @@ def check(app, shots, base):
     shoot(dlg, "album-scrolled")
     run_js(dlg, "draft.scenes[0].versions.splice(4); albumShown = 0; changed(true); $('main').scrollTop = 0")
     until(app, lambda: run_js(dlg, "$$('.album-tile').length") == 4, 5)
-    # Not on any screen: Show in Anki now says why it can't.
+    # Not on any screen: Set as active image says why it can't.
     run_js(dlg, "window._mainScenes = draft.screens.main.scenes; draft.screens.main.scenes = []; changed(true)")
     until(app, lambda: run_js(dlg, "$('#showNow').disabled && $('.now-note').textContent.includes('use this album on a screen')"),
-          5, "no reason given for Show in Anki now being off")
+          5, "no reason given for Set as active image being off")
     run_js(dlg, "draft.screens.main.scenes = window._mainScenes; changed(true)")
     until(app, lambda: run_js(dlg, "$('.now-note').textContent") != "" and not run_js(
         dlg, "$('.now-note').textContent.includes('use this album')"), 5)
     shoot(dlg, "album")
-    print("PASS: an album opens on the picture showing now (marked Now); a tile previews, Adjust crop... opens the crop, "
-          "Show in Anki now puts it on screen (or says why it can't), both stay in view down a long album, and × takes one out.")
+    # The clicked tile's moment lasts while the Scenes page shows.
+    assert renderer.scene_look is not None
+    run_js(dlg, "byText('#nav button', 'Screens').click()")
+    until(app, lambda: renderer.scene_look is None, 5, "leaving Scenes kept the album's picture in Anki's window")
+    run_js(dlg, "byText('#nav button', 'Scenes').click()")
+    print("PASS: an album opens on the picture showing now (marked Active); a tile previews, in Anki's window too, "
+          "Adjust crop... opens the crop, Set as active image puts it on screen (or says why it can't), both stay in "
+          "view down a long album, and × takes one out.")
 
     # A day cycle from the template, one image per version.
     run_js(dlg, "byText('#nav button', 'Scenes').click()")
@@ -649,8 +659,9 @@ def check(app, shots, base):
     until(app, lambda: renderer.scene_look is None, 5, "the day cycle's moment stayed in Anki's window")
     run_js(dlg, "$$('.album-tile .pick')[0].click(); $('#adjustCrop').click()")
     until(app, lambda: run_js(dlg, "!!$('.position-dialog')"), 5, "a linked picture didn't open for positioning")
-    pump(app, 0.5)
-    assert renderer.scene_look is None, "an album's preview went to Anki's window"
+    # A linked album's picture, clicked, shows in Anki's window too.
+    until(app, lambda: [x["image"] for x in (renderer.scene_look or {}).get("layers", [])] == [f"@{link}/hills.png"], 5,
+          f"a linked album's picture didn't show in Anki's window: {renderer.scene_look}")
     run_js(dlg, "$('.position-dialog .primary').click()")
     run_js(dlg, f"(() => {{ window._st = null; fetch(imageUrl({album}.versions[2].image))"
                 ".then(r => { window._st = r.status; }); })()")

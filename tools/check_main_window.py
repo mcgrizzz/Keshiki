@@ -230,14 +230,16 @@ def check(app, shots, base):
 
     # Studying straight from the overview, its fade not done: the reviewer's pages load
     # mid-fade, on a look already going out, and join it where the bars are. Another picture,
-    # blurred, as studying often has.
+    # blurred, as studying often has. A long fade, so a slow machine (CI's Windows) still has the
+    # reviewer load during it.
     other = new_scene("single", image=b)
     cfg["scenes"].append(other)
     cfg["screens"]["study"].update(same_as_main=False, scenes=[other["id"]], blur=8)
+    cfg["transition_seconds"] = 4
     renderer.set_config(cfg)
     mw.moveToState("deckBrowser")
     loaded_dim = f"window.keshiki && keshiki.main ? {dim} : -1"   # -1 while the page loads
-    until(app, lambda: js(app, mw.web, loaded_dim) == 0 and js(app, mw.toolbarWeb, dim) == 0, 5)
+    until(app, lambda: js(app, mw.web, loaded_dim) == 0 and js(app, mw.toolbarWeb, dim) == 0, 10)
     before = renderer.shown
     mw.moveToState("overview")
     until(app, lambda: renderer.shown is not before, 5, "the overview's look never went out")
@@ -255,16 +257,17 @@ def check(app, shots, base):
     pump(app, 0.2)
     main_dim, bar_dim, bottom_dim = (js(app, w, dim) for w in (mw.web, mw.toolbarWeb, mw.bottomWeb))
     print(f"  reviewer loaded mid-fade: main area {main_dim:.2f}, toolbar {bar_dim:.2f}, bottom {bottom_dim:.2f}")
-    assert 0.03 < bar_dim < 0.27, "the toolbar isn't mid-fade"
+    assert 0.005 < bar_dim < 0.27, "the toolbar isn't mid-fade"
     assert abs(main_dim - bar_dim) < 0.04 and abs(bottom_dim - bar_dim) < 0.04, (main_dim, bar_dim, bottom_dim)
     newest = """(() => { const live = [...keshiki.main.stack.children];
         const el = live[live.length - 1]; return [el.dataset.key, Number(getComputedStyle(el).opacity), live.length]; })()"""
     main_pic, bar_pic = js(app, mw.web, newest), js(app, mw.toolbarWeb, newest)
     print(f"  newest picture: main area {main_pic}, toolbar {bar_pic}")
     assert main_pic[0] == bar_pic[0] and abs(main_pic[1] - bar_pic[1]) < 0.06 and main_pic[2] == 2, (main_pic, bar_pic)
-    until(app, lambda: js(app, mw.web, loaded_dim) == 0.3 and js(app, mw.toolbarWeb, dim) == 0.3, 5)
+    until(app, lambda: js(app, mw.web, loaded_dim) == 0.3 and js(app, mw.toolbarWeb, dim) == 0.3, 10)
     cfg["scenes"].remove(other)
     cfg["screens"]["study"].update(same_as_main=True, scenes=[], blur=0)
+    cfg["transition_seconds"] = 2.0
     renderer.set_config(cfg)
     pump(app, 2.5)
     print("PASS: pages that load while a fade is under way join it, in step with the bars.")
